@@ -1,3 +1,4 @@
 (library
  (name hedgehog)
- (public_name hedgehog))
+ (public_name hedgehog)
+ (libraries domainslib))

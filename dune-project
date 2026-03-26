@@ -13,7 +13,8 @@
  (synopsis "Property-based testing with integrated shrinking for OCaml")
  (description "Hedgehog is a property-based testing library with integrated shrinking, using OCaml 5 effects for assertions and logging.")
  (depends
-  (ocaml (>= 5.0))))
+  (ocaml (>= 5.0))
+  (domainslib (>= 0.5))))
 
 (package
  (name hedgehog-alcotest)

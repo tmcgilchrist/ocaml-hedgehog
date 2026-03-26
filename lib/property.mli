@@ -85,6 +85,27 @@ val check_report : property -> report
 val format_report : report -> string
 (** Format a report as a human-readable string. *)
 
+(** {2 Group runner} *)
+
+type group = {
+  name : string;
+  properties : (string * property) list;
+}
+
+val check_group : group -> bool
+(** Run a group of properties sequentially. Prints per-property results
+    and a summary line. Returns [true] if all properties passed. *)
+
+val check_sequential : group -> bool
+(** Equivalent to {!check_group}. *)
+
+val check_parallel : ?num_domains:int -> group -> bool
+(** Run properties in parallel using a domainslib task pool.
+    [num_domains] defaults to [Domain.recommended_domain_count () - 1].
+    Properties sharing mutable state may interfere with each other. *)
+
+(** {2 Recheck} *)
+
 val recheck : int -> Seed.t -> property -> report
 (** Re-run a property at a specific size and seed for reproducing failures. *)
 

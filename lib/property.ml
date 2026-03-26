@@ -214,6 +214,85 @@ let check prop =
   | OK -> true
   | _ -> false
 
+(* -- Group runner -- *)
+
+type group = {
+  name : string;
+  properties : (string * property) list;
+}
+
+let print_property_result name report =
+  match report.status with
+  | OK ->
+    Printf.printf "  ✓ %s passed %d tests.\n" name report.tests
+  | GaveUp ->
+    Printf.printf "  ⚐ %s gave up after %d discards, only %d tests.\n"
+      name report.discards report.tests
+  | Failed { failure; log } ->
+    Printf.printf "  ✗ %s failed after %d tests.\n" name report.tests;
+    List.iter (fun entry ->
+      match entry with
+      | Annotation s -> Printf.printf "      %s\n" s
+      | Footnote s -> Printf.printf "      [footnote] %s\n" s
+    ) log;
+    Printf.printf "      %s\n" failure.message
+
+let print_group_footer ok failed gave_up =
+  let bar = "━━━" in
+  let parts = ref [] in
+  if failed > 0 then
+    parts := Printf.sprintf "%d failed" failed :: !parts;
+  if gave_up > 0 then
+    parts := Printf.sprintf "%d gave up" gave_up :: !parts;
+  if ok > 0 then
+    parts := Printf.sprintf "%d succeeded" ok :: !parts;
+  let summary = String.concat ", " (List.rev !parts) in
+  Printf.printf "%s %s. %s\n" bar summary bar;
+  failed = 0 && gave_up = 0
+
+let check_group group =
+  let bar = "━━━" in
+  Printf.printf "%s %s %s\n" bar group.name bar;
+  let ok = ref 0 in
+  let failed = ref 0 in
+  let gave_up = ref 0 in
+  List.iter (fun (name, prop) ->
+    let report = check_report prop in
+    print_property_result name report;
+    match report.status with
+    | OK -> incr ok
+    | GaveUp -> incr gave_up
+    | Failed _ -> incr failed
+  ) group.properties;
+  print_group_footer !ok !failed !gave_up
+
+let check_sequential = check_group
+
+let check_parallel ?(num_domains = max 1 (Domain.recommended_domain_count () - 1)) group =
+  let bar = "━━━" in
+  Printf.printf "%s %s %s\n" bar group.name bar;
+  let pool = Domainslib.Task.setup_pool ~num_domains () in
+  let result = Domainslib.Task.run pool (fun () ->
+    let promises = List.map (fun (name, prop) ->
+      (name, Domainslib.Task.async pool (fun () -> check_report prop)))
+      group.properties
+    in
+    let results = List.map (fun (name, p) ->
+      (name, Domainslib.Task.await pool p)) promises
+    in
+    let ok = ref 0 and failed = ref 0 and gave_up = ref 0 in
+    List.iter (fun (name, report) ->
+      print_property_result name report;
+      match report.status with
+      | OK -> incr ok
+      | GaveUp -> incr gave_up
+      | Failed _ -> incr failed
+    ) results;
+    print_group_footer !ok !failed !gave_up
+  ) in
+  Domainslib.Task.teardown_pool pool;
+  result
+
 let recheck size seed prop =
   match prop.gen size seed with
   | None ->
