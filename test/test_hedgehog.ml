@@ -640,6 +640,77 @@ let test_property () = group "Property" (fun () ->
     Property.check prop);
 )
 
+(* ---- Stm tests ---- *)
+
+(* Correct counter spec *)
+module Counter_spec = struct
+  type cmd = Incr | Decr | Get
+  type state = int
+  type sut = int ref
+  type result = Unit | Int of int
+
+  let show_cmd = function Incr -> "Incr" | Decr -> "Decr" | Get -> "Get"
+  let show_result = function Unit -> "()" | Int n -> string_of_int n
+  let gen_cmd _state = Hedgehog.Gen.element [Incr; Decr; Get]
+  let shrink_cmd _ = Seq.empty
+
+  let init_state = 0
+  let init_sut () = ref 0
+  let cleanup _ = ()
+
+  let next_state cmd state = match cmd with
+    | Incr -> state + 1 | Decr -> state - 1 | Get -> state
+
+  let precond _state _cmd = true
+
+  let run cmd sut = match cmd with
+    | Incr -> incr sut; Unit
+    | Decr -> decr sut; Unit
+    | Get -> Int !sut
+
+  let postcond cmd state result = match cmd, result with
+    | Get, Int n -> n = state
+    | (Incr | Decr), Unit -> true
+    | _ -> false
+end
+
+(* Buggy counter: increment adds 2 instead of 1 *)
+module Buggy_counter_spec = struct
+  include Counter_spec
+
+  let run cmd sut = match cmd with
+    | Incr -> sut := !sut + 2; Unit  (* Bug! *)
+    | Decr -> decr sut; Unit
+    | Get -> Int !sut
+end
+
+module Counter_stm = Hedgehog.Stm.Make(Counter_spec)
+module Buggy_stm = Hedgehog.Stm.Make(Buggy_counter_spec)
+
+let test_stm () = group "Stm" (fun () ->
+
+  check "sequential: correct counter passes" (fun () ->
+    Hedgehog.Property.check (Counter_stm.sequential ()));
+
+  check "sequential: buggy counter fails" (fun () ->
+    let report = Hedgehog.Property.check_report (Buggy_stm.sequential ()) in
+    match report.status with
+    | Hedgehog.Property.Failed _ -> true
+    | _ -> false);
+
+  check "sequential: buggy counter shrinks to minimal" (fun () ->
+    let report = Hedgehog.Property.check_report (Buggy_stm.sequential ()) in
+    match report.status with
+    | Hedgehog.Property.Failed { log; _ } ->
+      (* Should shrink to [Incr; Get] — a sequence of 2 commands *)
+      let annotations = List.filter_map (function
+        | Hedgehog.Property.Annotation s -> Some s
+        | _ -> None) log in
+      (* Minimal failure needs Incr (to trigger bug) then Get (to observe it) *)
+      List.length annotations = 2
+    | _ -> false);
+)
+
 let () =
   test_seed ();
   test_tree ();
@@ -647,6 +718,7 @@ let () =
   test_range ();
   test_gen ();
   test_property ();
+  test_stm ();
   Printf.printf "\n=== Summary ===\n";
   Printf.printf "  Passed: %d\n" !tests_passed;
   Printf.printf "  Failed: %d\n" !tests_failed;

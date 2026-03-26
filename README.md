@@ -20,6 +20,7 @@ Generate hundreds of test cases automatically, exposing even the most insidious 
 - Equality and diff assertions with OCaml 5 algebraic effects.
 - Monadic generator composition with `let*` / `let+` / `and+` binding operators.
 - `and+` enables parallel shrinking via `Tree.mzip`.
+- State machine testing with sequential and parallel (linearizability) checking via `Stm`.
 - Zero dependencies beyond OCaml >= 5.0.
 
 ## Example
@@ -74,6 +75,64 @@ let prop_bad =
   Assertion failed
 ```
 
+## State Machine Testing
+
+The `Stm` module lets you test stateful systems by defining a model
+specification and checking that the real implementation matches:
+
+```ocaml
+open Hedgehog
+
+module Counter_spec = struct
+  type cmd = Incr | Decr | Get
+  type state = int
+  type sut = int ref
+  type result = Unit | Int of int
+
+  let show_cmd = function Incr -> "Incr" | Decr -> "Decr" | Get -> "Get"
+  let show_result = function Unit -> "()" | Int n -> string_of_int n
+  let gen_cmd _state = Gen.element [Incr; Decr; Get]
+  let shrink_cmd _ = Seq.empty
+
+  let init_state = 0
+  let init_sut () = ref 0
+  let cleanup _ = ()
+
+  let next_state cmd state = match cmd with
+    | Incr -> state + 1 | Decr -> state - 1 | Get -> state
+
+  let precond _state _cmd = true
+
+  let run cmd sut = match cmd with
+    | Incr -> incr sut; Unit
+    | Decr -> decr sut; Unit
+    | Get -> Int !sut
+
+  let postcond cmd state result = match cmd, result with
+    | Get, Int n -> n = state
+    | (Incr | Decr), Unit -> true
+    | _ -> false
+end
+
+module Counter_stm = Stm.Make(Counter_spec)
+```
+
+Run a sequential test to check postconditions at each step:
+
+```ocaml
+let () =
+  if Property.check (Counter_stm.sequential ()) then
+    print_endline "Sequential: OK"
+```
+
+Run a parallel test to detect concurrency bugs via linearizability checking:
+
+```ocaml
+let () =
+  if Property.check (Counter_stm.parallel ()) then
+    print_endline "Parallel: OK"
+```
+
 ## Building
 
 ```shell
@@ -93,20 +152,21 @@ dune runtest
 Seed ──┐
        │
 Tree ──┤
-       ├──► Gen ──► Property
+       ├──► Gen ──► Property ──► Stm
 Shrink─┤
        │
-Range ──┘
+Range ─┘
 ```
 
-| Module | Description |
-|--------|-------------|
-| `Hedgehog.Seed` | SplitMix64 splittable PRNG |
-| `Hedgehog.Tree` | Rose tree with lazy children for integrated shrinking |
-| `Hedgehog.Shrink` | Pure shrinking strategies (binary search, halving, list removal) |
-| `Hedgehog.Range` | Size-dependent ranges (constant, linear, exponential) |
-| `Hedgehog.Gen` | Generator monad with numeric, string, list, and choice combinators |
-| `Hedgehog.Property` | Property runner with OCaml 5 effect-based assertions |
+| Module              | Description                                                        |
+|---------------------|--------------------------------------------------------------------|
+| `Hedgehog.Seed`     | SplitMix64 splittable PRNG                                         |
+| `Hedgehog.Tree`     | Rose tree with lazy children for integrated shrinking              |
+| `Hedgehog.Shrink`   | Pure shrinking strategies (binary search, halving, list removal)   |
+| `Hedgehog.Range`    | Size-dependent ranges (constant, linear, exponential)              |
+| `Hedgehog.Gen`      | Generator monad with numeric, string, list, and choice combinators |
+| `Hedgehog.Property` | Property runner with OCaml 5 effect-based assertions               |
+| `Hedgehog.Stm`      | State machine testing with sequential and parallel checking        |
 
 ## Resources
 

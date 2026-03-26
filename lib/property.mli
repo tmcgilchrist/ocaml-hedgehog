@@ -84,3 +84,15 @@ val check_report : property -> report
 
 val recheck : int -> Seed.t -> property -> report
 (** Re-run a property at a specific size and seed for reproducing failures. *)
+
+(** {2 Internal — used by Stm} *)
+
+(** The outcome of running a single test closure under the effect handler. *)
+type test_result =
+  | TestPassed of log_entry list
+      (** The test passed, with any log entries collected. *)
+  | TestFailed of failure * log_entry list
+      (** The test failed with a failure and any log entries collected. *)
+
+val run_test : (unit -> unit) -> test_result
+(** Run a test closure, capturing effects. Returns pass/fail with log. *)

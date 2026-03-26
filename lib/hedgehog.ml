@@ -4,3 +4,4 @@ module Shrink = Shrink
 module Range = Range
 module Gen = Gen
 module Property = Property
+module Stm = Stm
