@@ -114,6 +114,34 @@ val int64 : int64 Range.t -> int64 t
 (** Generate a random [int64] in the given range, with shrinking towards
     the origin. Uses native [int64] arithmetic. *)
 
+(** {2 Subterm combinators}
+
+    Generate values that shrink to structural subterms.
+    Useful for recursive data types (ASTs, trees, JSON, etc.):
+    if [Neg(e)] fails, the shrinker tries [e] directly before
+    trying [Neg(e')] for smaller [e']. *)
+
+val subterm : 'a t -> ('a -> 'a) -> 'a t
+(** [subterm gen f] generates a value by applying [f] to a value from [gen].
+    Shrinks include the raw subterm at every level. *)
+
+val subterm2 : 'a t -> 'a t -> ('a -> 'a -> 'a) -> 'a t
+(** [subterm2 g1 g2 f] generates [f x y] from [g1] and [g2].
+    Shrinks include both raw subterms. *)
+
+val subterm3 : 'a t -> 'a t -> 'a t -> ('a -> 'a -> 'a -> 'a) -> 'a t
+(** [subterm3 g1 g2 g3 f] generates [f x y z].
+    Shrinks include all three raw subterms. *)
+
+val subterm_m : 'a t -> ('a -> 'a t) -> 'a t
+(** Like {!subterm} but [f] returns a generator. *)
+
+val subterm_m2 : 'a t -> 'a t -> ('a -> 'a -> 'a t) -> 'a t
+(** Like {!subterm2} but [f] returns a generator. *)
+
+val subterm_m3 : 'a t -> 'a t -> 'a t -> ('a -> 'a -> 'a -> 'a t) -> 'a t
+(** Like {!subterm3} but [f] returns a generator. *)
+
 (** {2 Conditional} *)
 
 val filter : ('a -> bool) -> 'a t -> 'a t

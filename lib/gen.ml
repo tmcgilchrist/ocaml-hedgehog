@@ -324,6 +324,113 @@ let int64 range size seed =
     let tree = Tree.cons_child origin tree in
     Some tree
 
+(* -- Subterm combinators -- *)
+
+let subterm gen f size seed =
+  match gen size seed with
+  | None -> None
+  | Some sub_tree ->
+    let rec go (Tree.Node (x, xs) as sub) =
+      Tree.Node (f x, fun () -> Seq.Cons (sub, Seq.map go xs))
+    in
+    Some (go sub_tree)
+
+let subterm2 gen1 gen2 f size seed =
+  let (s1, s2) = Seed.split seed in
+  match gen1 size s1, gen2 size s2 with
+  | Some t1, Some t2 ->
+    let rec go (Tree.Node (x, xs) as tx) (Tree.Node (y, ys) as ty) =
+      Tree.Node (f x y,
+        Seq.append
+          (fun () -> Seq.Cons (tx, fun () -> Seq.Cons (ty, Seq.empty)))
+          (Seq.append
+            (Seq.map (fun cx -> go cx ty) xs)
+            (Seq.map (fun cy -> go tx cy) ys)))
+    in
+    Some (go t1 t2)
+  | _ -> None
+
+let subterm3 gen1 gen2 gen3 f size seed =
+  let (s1, s') = Seed.split seed in
+  let (s2, s3) = Seed.split s' in
+  match gen1 size s1, gen2 size s2, gen3 size s3 with
+  | Some t1, Some t2, Some t3 ->
+    let rec go (Tree.Node (x, xs) as tx) (Tree.Node (y, ys) as ty)
+               (Tree.Node (z, zs) as tz) =
+      Tree.Node (f x y z,
+        Seq.append
+          (fun () -> Seq.Cons (tx, fun () ->
+            Seq.Cons (ty, fun () -> Seq.Cons (tz, Seq.empty))))
+          (Seq.append
+            (Seq.map (fun cx -> go cx ty tz) xs)
+            (Seq.append
+              (Seq.map (fun cy -> go tx cy tz) ys)
+              (Seq.map (fun cz -> go tx ty cz) zs))))
+    in
+    Some (go t1 t2 t3)
+  | _ -> None
+
+let subterm_m gen f size seed =
+  let (sk, sm) = Seed.split seed in
+  match gen size sm with
+  | None -> None
+  | Some sub_tree ->
+    let rec go (Tree.Node (x, xs) as sub) =
+      match f x size sk with
+      | None -> None
+      | Some (Tree.Node (y, ys)) ->
+        Some (Tree.Node (y,
+          fun () -> Seq.Cons (sub, Seq.append (Seq.filter_map go xs) ys)))
+    in
+    go sub_tree
+
+let subterm_m2 gen1 gen2 f size seed =
+  let (s1, s') = Seed.split seed in
+  let (s2, sk) = Seed.split s' in
+  match gen1 size s1, gen2 size s2 with
+  | Some t1, Some t2 ->
+    let rec go (Tree.Node (x, xs) as tx) (Tree.Node (y, ys) as ty) =
+      match f x y size sk with
+      | None -> None
+      | Some (Tree.Node (r, rs)) ->
+        Some (Tree.Node (r,
+          Seq.append
+            (fun () -> Seq.Cons (tx, fun () -> Seq.Cons (ty, Seq.empty)))
+            (Seq.append
+              (Seq.append
+                (Seq.filter_map (fun cx -> go cx ty) xs)
+                (Seq.filter_map (fun cy -> go tx cy) ys))
+              rs)))
+    in
+    go t1 t2
+  | _ -> None
+
+let subterm_m3 gen1 gen2 gen3 f size seed =
+  let (s1, s') = Seed.split seed in
+  let (s2, s'') = Seed.split s' in
+  let (s3, sk) = Seed.split s'' in
+  match gen1 size s1, gen2 size s2, gen3 size s3 with
+  | Some t1, Some t2, Some t3 ->
+    let rec go (Tree.Node (x, xs) as tx) (Tree.Node (y, ys) as ty)
+               (Tree.Node (z, zs) as tz) =
+      match f x y z size sk with
+      | None -> None
+      | Some (Tree.Node (r, rs)) ->
+        Some (Tree.Node (r,
+          Seq.append
+            (fun () -> Seq.Cons (tx, fun () ->
+              Seq.Cons (ty, fun () -> Seq.Cons (tz, Seq.empty))))
+            (Seq.append
+              (Seq.append
+                (Seq.filter_map (fun cx -> go cx ty tz) xs)
+                (Seq.append
+                  (Seq.filter_map (fun cy -> go tx cy tz) ys)
+                  (Seq.filter_map (fun cz -> go tx ty cz) zs)))
+              rs)))
+    in
+    go t1 t2 t3
+  | _ -> None
+
 (* -- Sampling -- *)
 
 let sample ?(size = 30) ?seed gen =
