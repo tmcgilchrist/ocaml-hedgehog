@@ -1,0 +1,653 @@
+let tests_passed = ref 0
+let tests_failed = ref 0
+
+let check name f =
+  match f () with
+  | true ->
+    incr tests_passed;
+    Printf.printf "  PASS: %s\n%!" name
+  | false ->
+    incr tests_failed;
+    Printf.printf "  FAIL: %s\n%!" name
+  | exception e ->
+    incr tests_failed;
+    Printf.printf "  FAIL: %s (exception: %s)\n%!" name (Printexc.to_string e)
+
+let group name f =
+  Printf.printf "\n=== %s ===\n%!" name;
+  f ()
+
+(* ---- Seed tests ---- *)
+let test_seed () = group "Seed" (fun () ->
+
+  check "from produces deterministic seed" (fun () ->
+    let s1 = Hedgehog.Seed.from 42L in
+    let s2 = Hedgehog.Seed.from 42L in
+    s1.value = s2.value && s1.gamma = s2.gamma);
+
+  check "from different inputs produce different seeds" (fun () ->
+    let s1 = Hedgehog.Seed.from 42L in
+    let s2 = Hedgehog.Seed.from 43L in
+    s1.value <> s2.value);
+
+  check "split produces two different seeds" (fun () ->
+    let s = Hedgehog.Seed.from 42L in
+    let (s1, s2) = Hedgehog.Seed.split s in
+    s1.value <> s2.value || s1.gamma <> s2.gamma);
+
+  check "next_int64 produces value and new seed" (fun () ->
+    let s = Hedgehog.Seed.from 42L in
+    let (v, s') = Hedgehog.Seed.next_int64 s in
+    v <> 0L && s'.value <> s.value);
+
+  check "next_int in range" (fun () ->
+    let s = Hedgehog.Seed.from 42L in
+    let results = Array.init 100 (fun i ->
+      let s' = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      let (v, _) = Hedgehog.Seed.next_int 10 20 s' in
+      v
+    ) in
+    ignore s;
+    Array.for_all (fun v -> v >= 10 && v <= 20) results);
+
+  check "next_float in range" (fun () ->
+    let results = Array.init 100 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      let (v, _) = Hedgehog.Seed.next_float 1.0 5.0 s in
+      v
+    ) in
+    Array.for_all (fun v -> v >= 1.0 && v < 5.0) results);
+
+  check "mix64 is deterministic" (fun () ->
+    let a = Hedgehog.Seed.mix64 12345L in
+    let b = Hedgehog.Seed.mix64 12345L in
+    a = b);
+
+  check "golden_gamma is correct" (fun () ->
+    Hedgehog.Seed.golden_gamma = 0x9e3779b97f4a7c15L);
+)
+
+(* ---- Tree tests ---- *)
+let test_tree () = group "Tree" (fun () ->
+
+  check "singleton has no children" (fun () ->
+    let Hedgehog.Tree.Node (v, children) = Hedgehog.Tree.singleton 42 in
+    v = 42 && (match children () with Seq.Nil -> true | _ -> false));
+
+  check "map preserves structure" (fun () ->
+    let t = Hedgehog.Tree.Node (1, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 2, Seq.empty)) in
+    let t' = Hedgehog.Tree.map (fun x -> x * 2) t in
+    Hedgehog.Tree.value t' = 2 &&
+    (match Hedgehog.Tree.children t' () with
+     | Seq.Cons (child, _) -> Hedgehog.Tree.value child = 4
+     | _ -> false));
+
+  check "bind works" (fun () ->
+    let t = Hedgehog.Tree.singleton 5 in
+    let t' = Hedgehog.Tree.bind t (fun x ->
+      Hedgehog.Tree.singleton (x + 1)) in
+    Hedgehog.Tree.value t' = 6);
+
+  check "mzip pairs values" (fun () ->
+    let t1 = Hedgehog.Tree.Node (1, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 0, Seq.empty)) in
+    let t2 = Hedgehog.Tree.Node (10, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 5, Seq.empty)) in
+    let tz = Hedgehog.Tree.mzip t1 t2 in
+    let (a, b) = Hedgehog.Tree.value tz in
+    a = 1 && b = 10);
+
+  check "mzip generates shrinks from both sides" (fun () ->
+    let t1 = Hedgehog.Tree.Node (1, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 0, Seq.empty)) in
+    let t2 = Hedgehog.Tree.Node (10, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 5, Seq.empty)) in
+    let tz = Hedgehog.Tree.mzip t1 t2 in
+    let child_vals = List.of_seq (Seq.map Hedgehog.Tree.value
+      (Hedgehog.Tree.children tz)) in
+    (* Should have shrinks: (0,10) and (1,5) *)
+    List.length child_vals = 2);
+
+  check "interleave works on small list" (fun () ->
+    let trees = [
+      Hedgehog.Tree.Node (1, fun () -> Seq.Cons (Hedgehog.Tree.singleton 0, Seq.empty));
+      Hedgehog.Tree.Node (2, fun () -> Seq.Cons (Hedgehog.Tree.singleton 0, Seq.empty));
+    ] in
+    let result = Hedgehog.Tree.interleave trees in
+    Hedgehog.Tree.value result = [1; 2]);
+
+  check "interleave shrinks towards empty" (fun () ->
+    let trees = [
+      Hedgehog.Tree.singleton 1;
+      Hedgehog.Tree.singleton 2;
+      Hedgehog.Tree.singleton 3;
+    ] in
+    let result = Hedgehog.Tree.interleave trees in
+    let first_child = match Hedgehog.Tree.children result () with
+      | Seq.Cons (c, _) -> Some (Hedgehog.Tree.value c)
+      | Seq.Nil -> None
+    in
+    (* First shrink of [1;2;3] should remove elements *)
+    match first_child with
+    | Some xs -> List.length xs < 3
+    | None -> false);
+
+  check "cons_child adds child at front" (fun () ->
+    let t = Hedgehog.Tree.singleton 10 in
+    let t' = Hedgehog.Tree.cons_child 0 t in
+    Hedgehog.Tree.value t' = 10 &&
+    (match Hedgehog.Tree.children t' () with
+     | Seq.Cons (child, _) -> Hedgehog.Tree.value child = 0
+     | _ -> false));
+
+  check "prune 0 removes all children" (fun () ->
+    let t = Hedgehog.Tree.Node (1, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 0, Seq.empty)) in
+    let t' = Hedgehog.Tree.prune 0 t in
+    match Hedgehog.Tree.children t' () with
+    | Seq.Nil -> true
+    | _ -> false);
+
+  check "depth of singleton is 1" (fun () ->
+    Hedgehog.Tree.depth (Hedgehog.Tree.singleton 42) = 1);
+
+  check "depth counts levels" (fun () ->
+    let t = Hedgehog.Tree.Node (1, fun () ->
+      Seq.Cons (Hedgehog.Tree.Node (2, fun () ->
+        Seq.Cons (Hedgehog.Tree.singleton 3, Seq.empty)), Seq.empty)) in
+    Hedgehog.Tree.depth t = 3);
+
+  check "filter keeps root, removes non-matching children" (fun () ->
+    let t = Hedgehog.Tree.Node (10, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 5, fun () ->
+        Seq.Cons (Hedgehog.Tree.singleton 15, Seq.empty))) in
+    let t' = Hedgehog.Tree.filter (fun x -> x < 12) t in
+    Hedgehog.Tree.value t' = 10 &&
+    let child_vals = List.of_seq (Seq.map Hedgehog.Tree.value
+      (Hedgehog.Tree.children t')) in
+    child_vals = [5]);
+
+  check "map_option returns None when root fails" (fun () ->
+    let t = Hedgehog.Tree.singleton 5 in
+    Hedgehog.Tree.map_option (fun x -> if x > 10 then Some x else None) t = None);
+
+  check "map_option returns Some when root passes" (fun () ->
+    let t = Hedgehog.Tree.singleton 15 in
+    match Hedgehog.Tree.map_option (fun x -> if x > 10 then Some (x * 2) else None) t with
+    | Some t' -> Hedgehog.Tree.value t' = 30
+    | None -> false);
+
+  check "render produces string" (fun () ->
+    let t = Hedgehog.Tree.Node (1, fun () ->
+      Seq.Cons (Hedgehog.Tree.singleton 0, Seq.empty)) in
+    let s = Hedgehog.Tree.render string_of_int t in
+    String.length s > 0 && String.contains s '1' && String.contains s '0');
+)
+
+(* ---- Shrink tests ---- *)
+let test_shrink () = group "Shrink" (fun () ->
+
+  check "towards 0 100" (fun () ->
+    let result = List.of_seq (Hedgehog.Shrink.towards 0 100) in
+    List.hd result = 0 && List.length result > 1);
+
+  check "towards destination = x returns empty" (fun () ->
+    let result = List.of_seq (Hedgehog.Shrink.towards 5 5) in
+    result = []);
+
+  check "towards always includes destination" (fun () ->
+    let result = List.of_seq (Hedgehog.Shrink.towards 0 50) in
+    List.mem 0 result);
+
+  check "towards_float 0.0 100.0 starts with 0.0" (fun () ->
+    match Hedgehog.Shrink.towards_float 0.0 100.0 () with
+    | Seq.Cons (v, _) -> v = 0.0
+    | Seq.Nil -> false);
+
+  check "towards_float same value returns empty" (fun () ->
+    match Hedgehog.Shrink.towards_float 5.0 5.0 () with
+    | Seq.Nil -> true
+    | _ -> false);
+
+  check "halves 15 = [15; 7; 3; 1]" (fun () ->
+    let result = List.of_seq (Hedgehog.Shrink.halves 15) in
+    result = [15; 7; 3; 1]);
+
+  check "halves 100 = [100; 50; 25; 12; 6; 3; 1]" (fun () ->
+    let result = List.of_seq (Hedgehog.Shrink.halves 100) in
+    result = [100; 50; 25; 12; 6; 3; 1]);
+
+  check "halves 0 = []" (fun () ->
+    let result = List.of_seq (Hedgehog.Shrink.halves 0) in
+    result = []);
+
+  check "list [1;2;3] starts with []" (fun () ->
+    let result = Hedgehog.Shrink.list [1;2;3] in
+    List.hd result = []);
+
+  check "list [1;2;3] contains subsets" (fun () ->
+    let result = Hedgehog.Shrink.list [1;2;3] in
+    List.mem [2;3] result && List.mem [1;3] result && List.mem [1;2] result);
+
+  check "removes 2 [1;2;3;4;5;6]" (fun () ->
+    let result = Hedgehog.Shrink.removes 2 [1;2;3;4;5;6] in
+    List.hd result = [3;4;5;6]);
+
+  check "cons_nub deduplicates head" (fun () ->
+    Hedgehog.Shrink.cons_nub 1 [1;2;3] = [1;2;3]);
+
+  check "cons_nub prepends when different" (fun () ->
+    Hedgehog.Shrink.cons_nub 0 [1;2;3] = [0;1;2;3]);
+)
+
+(* ---- Range tests ---- *)
+let test_range () = group "Range" (fun () ->
+
+  check "singleton origin" (fun () ->
+    Hedgehog.Range.origin (Hedgehog.Range.singleton 5) = 5);
+
+  check "singleton bounds at any size" (fun () ->
+    Hedgehog.Range.bounds 0 (Hedgehog.Range.singleton 5) = (5, 5) &&
+    Hedgehog.Range.bounds 99 (Hedgehog.Range.singleton 5) = (5, 5));
+
+  check "constant bounds unaffected by size" (fun () ->
+    let r = Hedgehog.Range.constant 0 10 in
+    Hedgehog.Range.bounds 0 r = (0, 10) &&
+    Hedgehog.Range.bounds 50 r = (0, 10) &&
+    Hedgehog.Range.bounds 99 r = (0, 10));
+
+  check "constant_from origin" (fun () ->
+    Hedgehog.Range.origin (Hedgehog.Range.constant_from 5 0 10) = 5);
+
+  check "linear at size 0 equals origin" (fun () ->
+    let r = Hedgehog.Range.linear 0 10 in
+    let (lo, hi) = Hedgehog.Range.bounds 0 r in
+    lo = 0 && hi = 0);
+
+  check "linear at size 99 equals full range" (fun () ->
+    let r = Hedgehog.Range.linear 0 10 in
+    let (lo, hi) = Hedgehog.Range.bounds 99 r in
+    lo = 0 && hi = 10);
+
+  check "linear at size 50 approximately half" (fun () ->
+    let r = Hedgehog.Range.linear 0 100 in
+    let (_, hi) = Hedgehog.Range.bounds 50 r in
+    hi >= 45 && hi <= 55);
+
+  check "linear_from with centered origin" (fun () ->
+    let r = Hedgehog.Range.linear_from 0 (-10) 10 in
+    let (lo, hi) = Hedgehog.Range.bounds 0 r in
+    lo = 0 && hi = 0);
+
+  check "linear_from at full size" (fun () ->
+    let r = Hedgehog.Range.linear_from 0 (-10) 20 in
+    let (lo, hi) = Hedgehog.Range.bounds 99 r in
+    lo = -10 && hi = 20);
+
+  check "exponential at size 0" (fun () ->
+    let r = Hedgehog.Range.exponential 1 512 in
+    let (lo, hi) = Hedgehog.Range.bounds 0 r in
+    lo = 1 && hi = 1);
+
+  check "exponential at size 99" (fun () ->
+    let r = Hedgehog.Range.exponential 1 512 in
+    let (_, hi) = Hedgehog.Range.bounds 99 r in
+    hi = 512);
+
+  check "lower_bound / upper_bound" (fun () ->
+    let r = Hedgehog.Range.constant 5 15 in
+    Hedgehog.Range.lower_bound 50 r = 5 &&
+    Hedgehog.Range.upper_bound 50 r = 15);
+
+  check "clamp works" (fun () ->
+    Hedgehog.Range.clamp 5 10 15 = 10 &&
+    Hedgehog.Range.clamp 5 10 0 = 5 &&
+    Hedgehog.Range.clamp 5 10 7 = 7);
+)
+
+(* ---- Gen tests ---- *)
+let test_gen () = group "Gen" (fun () ->
+  let seed = Hedgehog.Seed.from 42L in
+
+  check "return always produces value" (fun () ->
+    match Hedgehog.Gen.return 42 30 seed with
+    | Some t -> Hedgehog.Tree.value t = 42
+    | None -> false);
+
+  check "map transforms value" (fun () ->
+    let g = Hedgehog.Gen.map (fun x -> x * 2) (Hedgehog.Gen.return 21) in
+    match g 30 seed with
+    | Some t -> Hedgehog.Tree.value t = 42
+    | None -> false);
+
+  check "bind chains generators" (fun () ->
+    let g = Hedgehog.Gen.bind (Hedgehog.Gen.return 10) (fun x ->
+      Hedgehog.Gen.return (x + 5)) in
+    match g 30 seed with
+    | Some t -> Hedgehog.Tree.value t = 15
+    | None -> false);
+
+  check "let* syntax works" (fun () ->
+    let open Hedgehog.Gen in
+    let g =
+      let* x = return 10 in
+      let* y = return 20 in
+      return (x + y)
+    in
+    match g 30 seed with
+    | Some t -> Hedgehog.Tree.value t = 30
+    | None -> false);
+
+  check "and+ syntax works" (fun () ->
+    let open Hedgehog.Gen in
+    let g =
+      let+ x = return 10
+      and+ y = return 20 in
+      x + y
+    in
+    match g 30 seed with
+    | Some t -> Hedgehog.Tree.value t = 30
+    | None -> false);
+
+  check "integral generates in range" (fun () ->
+    let g = Hedgehog.Gen.integral (Hedgehog.Range.constant 10 20) in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> -1
+    ) in
+    Array.for_all (fun v -> v >= 10 && v <= 20) results);
+
+  check "integral shrinks towards origin" (fun () ->
+    let g = Hedgehog.Gen.integral (Hedgehog.Range.constant 0 100) in
+    match g 30 seed with
+    | Some t ->
+      let v = Hedgehog.Tree.value t in
+      v >= 0 && v <= 100 &&
+      (* Check that shrinks exist and tend towards 0 *)
+      (match Hedgehog.Tree.children t () with
+       | Seq.Nil -> v = 0 (* Only no shrinks if value is already origin *)
+       | Seq.Cons (child, _) ->
+         let cv = Hedgehog.Tree.value child in
+         abs cv <= abs v)
+    | None -> false);
+
+  check "bool generates booleans" (fun () ->
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match Hedgehog.Gen.bool 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> false
+    ) in
+    let has_true = Array.exists Fun.id results in
+    let has_false = Array.exists (fun x -> not x) results in
+    has_true && has_false);
+
+  check "float generates in range" (fun () ->
+    let g = Hedgehog.Gen.float (Hedgehog.Range.linear_frac 0.0 10.0) in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 99 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> -1.0
+    ) in
+    Array.for_all (fun v -> v >= 0.0 && v <= 10.0) results);
+
+  check "char generates valid chars" (fun () ->
+    let g = Hedgehog.Gen.digit in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> '\000'
+    ) in
+    Array.for_all (fun c -> c >= '0' && c <= '9') results);
+
+  check "string generates correct length" (fun () ->
+    let g = Hedgehog.Gen.string (Hedgehog.Range.constant 5 5) Hedgehog.Gen.alpha in
+    match g 30 seed with
+    | Some t ->
+      let s = Hedgehog.Tree.value t in
+      String.length s = 5
+    | None -> false);
+
+  check "list generates correct approximate length" (fun () ->
+    let g = Hedgehog.Gen.list (Hedgehog.Range.constant 3 3) (Hedgehog.Gen.return 1) in
+    match g 30 seed with
+    | Some t ->
+      let xs = Hedgehog.Tree.value t in
+      List.length xs = 3
+    | None -> false);
+
+  check "list has shrinks towards shorter" (fun () ->
+    let g = Hedgehog.Gen.list (Hedgehog.Range.constant 3 3)
+              (Hedgehog.Gen.integral (Hedgehog.Range.constant 0 10)) in
+    match g 30 seed with
+    | Some t ->
+      let xs = Hedgehog.Tree.value t in
+      List.length xs = 3 &&
+      (match Hedgehog.Tree.children t () with
+       | Seq.Cons (child, _) ->
+         List.length (Hedgehog.Tree.value child) < 3
+       | Seq.Nil -> false)
+    | None -> false);
+
+  check "element selects from list" (fun () ->
+    let g = Hedgehog.Gen.element [10; 20; 30] in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> -1
+    ) in
+    Array.for_all (fun v -> v = 10 || v = 20 || v = 30) results);
+
+  check "choice selects generators" (fun () ->
+    let g = Hedgehog.Gen.choice [
+      Hedgehog.Gen.return 1;
+      Hedgehog.Gen.return 2;
+      Hedgehog.Gen.return 3;
+    ] in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> -1
+    ) in
+    Array.for_all (fun v -> v >= 1 && v <= 3) results);
+
+  check "option generates None and Some" (fun () ->
+    let g = Hedgehog.Gen.option (Hedgehog.Gen.return 42) in
+    let results = Array.init 100 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> None
+    ) in
+    let has_none = Array.exists (fun x -> x = None) results in
+    let has_some = Array.exists (fun x -> x = Some 42) results in
+    has_none && has_some);
+
+  check "discard always returns None" (fun () ->
+    Hedgehog.Gen.discard 30 seed = None);
+
+  check "filter only generates passing values" (fun () ->
+    let g = Hedgehog.Gen.filter (fun x -> x > 50)
+              (Hedgehog.Gen.integral (Hedgehog.Range.constant 0 100)) in
+    let results = Array.init 20 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 100)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> 999 (* filter may discard *)
+    ) in
+    Array.for_all (fun v -> v > 50 || v = 999) results);
+
+  check "sized receives size" (fun () ->
+    let g = Hedgehog.Gen.sized (fun s -> Hedgehog.Gen.return s) in
+    match g 42 seed with
+    | Some t -> Hedgehog.Tree.value t = 42
+    | None -> false);
+
+  check "resize overrides size" (fun () ->
+    let g = Hedgehog.Gen.resize 10
+      (Hedgehog.Gen.sized (fun s -> Hedgehog.Gen.return s)) in
+    match g 99 seed with
+    | Some t -> Hedgehog.Tree.value t = 10
+    | None -> false);
+
+  check "pair generates pairs" (fun () ->
+    let g = Hedgehog.Gen.pair (Hedgehog.Gen.return 1) (Hedgehog.Gen.return 2) in
+    match g 30 seed with
+    | Some t -> Hedgehog.Tree.value t = (1, 2)
+    | None -> false);
+
+  check "sample produces value" (fun () ->
+    let v = Hedgehog.Gen.sample (Hedgehog.Gen.return 42) in
+    v = 42);
+
+  check "shrink adds shrinks" (fun () ->
+    let g = Hedgehog.Gen.shrink (fun n -> [n - 1; n - 2])
+              (Hedgehog.Gen.return 10) in
+    match g 30 seed with
+    | Some t ->
+      Hedgehog.Tree.value t = 10 &&
+      (match Hedgehog.Tree.children t () with
+       | Seq.Nil -> false
+       | _ -> true)
+    | None -> false);
+
+  check "prune removes all shrinks" (fun () ->
+    let g = Hedgehog.Gen.prune (Hedgehog.Gen.integral (Hedgehog.Range.constant 0 100)) in
+    match g 30 seed with
+    | Some t ->
+      (match Hedgehog.Tree.children t () with
+       | Seq.Nil -> true
+       | _ -> false)
+    | None -> false);
+)
+
+(* ---- Property tests ---- *)
+let test_property () = group "Property" (fun () ->
+
+  check "passing property" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () -> Property.assert_ (x >= 0))) in
+    Property.check prop);
+
+  check "failing property reports failure" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () -> Property.assert_ (x < 0))) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed _ -> true
+    | _ -> false);
+
+  check "=== passes for equal values" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () -> Property.( === ) 42 42)) in
+    Property.check prop);
+
+  check "=== fails for unequal values" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () -> Property.( === ) 1 2)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed _ -> true
+    | _ -> false);
+
+  check "annotate is captured in log" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () ->
+        Property.annotate (Printf.sprintf "x = %d" x);
+        Property.assert_ (x < 0))) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { log; _ } ->
+      List.exists (function Property.Annotation s -> String.length s > 0 | _ -> false) log
+    | _ -> false);
+
+  check "shrinks to minimal counterexample" (fun () ->
+    (* Property: n < 500 should shrink n to 500 *)
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* n = int (Range.linear 0 1000) in
+      return (fun () ->
+        Property.annotate (Printf.sprintf "n = %d" n);
+        Property.assert_ (n < 500))) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { log; _ } ->
+      (* Check that the annotation contains a small number *)
+      let found_small = List.exists (fun entry ->
+        match entry with
+        | Property.Annotation s ->
+          (try
+             let n = Scanf.sscanf s "n = %d" Fun.id in
+             n = 500
+           with _ -> false)
+        | _ -> false
+      ) log in
+      found_small
+    | _ -> false);
+
+  check "list reverse property passes" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* xs = list (Range.linear 0 50) (int (Range.linear 0 100)) in
+      return (fun () ->
+        Property.assert_ (List.rev (List.rev xs) = xs))) in
+    Property.check prop);
+
+  check "discard leads to GaveUp" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property ~config:{ Property.default_config with
+      test_limit = 10; discard_limit = 5 }
+      Gen.discard in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.GaveUp -> true
+    | _ -> false);
+
+  check "footnote is captured in log" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.footnote "extra info";
+        Property.assert_ false)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { log; _ } ->
+      List.exists (function Property.Footnote s -> s = "extra info" | _ -> false) log
+    | _ -> false);
+
+  check "property with multiple generators" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.linear 0 100) in
+      let* y = int (Range.linear 0 100) in
+      return (fun () ->
+        Property.assert_ (x + y >= 0))) in
+    Property.check prop);
+)
+
+let () =
+  test_seed ();
+  test_tree ();
+  test_shrink ();
+  test_range ();
+  test_gen ();
+  test_property ();
+  Printf.printf "\n=== Summary ===\n";
+  Printf.printf "  Passed: %d\n" !tests_passed;
+  Printf.printf "  Failed: %d\n" !tests_failed;
+  if !tests_failed > 0 then exit 1

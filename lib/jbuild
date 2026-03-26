@@ -1,7 +1,0 @@
-(jbuild_version 1)
-
-(library
- ((name jack)
-  (public_name jack)
-  (wrapped false)
-  (libraries (core_kernel))))

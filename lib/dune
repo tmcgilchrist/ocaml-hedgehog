@@ -1,0 +1,3 @@
+(library
+ (name hedgehog)
+ (public_name hedgehog))

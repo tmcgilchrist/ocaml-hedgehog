@@ -32,3 +32,5 @@ jbuilder runtest
 
 Resources
 =========================================================================
+
+PRINGO: Pseudo-Random, splittable Number Generators for Ocaml https://github.com/xavierleroy/pringo/

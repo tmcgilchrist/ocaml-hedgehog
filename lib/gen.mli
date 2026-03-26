@@ -1,0 +1,128 @@
+(** Generators for random values with integrated shrinking.
+
+    A generator takes a size parameter and a seed, and produces a shrink tree
+    where the root is the generated value and children are shrunk alternatives.
+
+    The [option] in the return type supports discarding: [None] means the
+    generated value was discarded (e.g. by {!filter}). *)
+
+type 'a t = int -> Seed.t -> 'a Tree.t option
+
+(** {2 Monad} *)
+
+val return : 'a -> 'a t
+val bind : 'a t -> ('a -> 'b t) -> 'b t
+val map : ('a -> 'b) -> 'a t -> 'b t
+val apply : ('a -> 'b) t -> 'a t -> 'b t
+
+val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+val ( and+ ) : 'a t -> 'b t -> ('a * 'b) t
+
+(** {2 Numeric generators} *)
+
+val integral : int Range.t -> int t
+(** Generate a random integer in the given range, with shrinking towards
+    the range's origin via binary search. *)
+
+val int : int Range.t -> int t
+(** Alias for {!integral}. *)
+
+val float : float Range.t -> float t
+(** Generate a random float in the given range, shrinking towards the
+    range's origin. *)
+
+val bool : bool t
+(** Generate a random boolean, shrinking towards [false]. *)
+
+(** {2 Characters & strings} *)
+
+val char : int Range.t -> char t
+(** Generate a character from a range of character codes. *)
+
+val digit : char t
+val lower : char t
+val upper : char t
+val alpha : char t
+val alpha_num : char t
+val ascii : char t
+
+val string : int Range.t -> char t -> string t
+(** Generate a string using a range for the length and a char generator. *)
+
+(** {2 Choice combinators} *)
+
+val element : 'a list -> 'a t
+(** Randomly select an element from a list. Shrinks towards the first element. *)
+
+val choice : 'a t list -> 'a t
+(** Randomly select a generator from a list. Shrinks towards the first generator. *)
+
+val frequency : (int * 'a t) list -> 'a t
+(** Use weighted distribution to select a generator. Shrinks towards generators
+    with smaller indices. *)
+
+val recursive : ('a t list -> 'a t) -> 'a t list -> 'a t list -> 'a t
+(** [recursive f nonrec rec_] selects from [nonrec] and [rec_] generators.
+    When size <= 1, only [nonrec] generators are used. Recursive generators
+    have their size halved. *)
+
+(** {2 Collections} *)
+
+val list : int Range.t -> 'a t -> 'a list t
+(** Generate a list using a range for the length. Uses {!Tree.interleave}
+    for optimal shrinking. *)
+
+val option : 'a t -> 'a option t
+(** Generates [None] some of the time. *)
+
+val pair : 'a t -> 'b t -> ('a * 'b) t
+(** Generate a pair with parallel shrinking. *)
+
+(** {2 Conditional} *)
+
+val filter : ('a -> bool) -> 'a t -> 'a t
+(** Generate values satisfying a predicate. Retries with growing size.
+    After too many retries, discards. *)
+
+val discard : 'a t
+(** Always discards. *)
+
+val ensure : ('a -> bool) -> 'a t -> 'a t
+(** Discard if the generated value doesn't satisfy the predicate. *)
+
+(** {2 Size control} *)
+
+val sized : (int -> 'a t) -> 'a t
+(** Construct a generator that depends on the size parameter. *)
+
+val resize : int -> 'a t -> 'a t
+(** Override the size parameter. *)
+
+val scale : (int -> int) -> 'a t -> 'a t
+(** Adjust the size parameter with a function. *)
+
+val small : 'a t -> 'a t
+(** Make a generator smaller by scaling with the golden ratio. *)
+
+(** {2 Shrinking control} *)
+
+val shrink : ('a -> 'a list) -> 'a t -> 'a t
+(** Add extra shrinks to a generator. *)
+
+val prune : 'a t -> 'a t
+(** Remove all shrinks from a generator. *)
+
+val no_shrink : 'a t -> 'a t
+(** Alias for {!prune}. *)
+
+(** {2 Sampling / debugging} *)
+
+val sample : ?size:int -> ?seed:Seed.t -> 'a t -> 'a
+(** Generate a single sample. Raises if the generator always discards. *)
+
+val print_tree : ?size:int -> ?seed:Seed.t -> ('a -> string) -> 'a t -> unit
+(** Print the shrink tree for debugging. *)
+
+val generate : (int -> Seed.t -> 'a) -> 'a t
+(** Create a generator with no shrinks from a size and seed function. *)
