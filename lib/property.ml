@@ -25,19 +25,35 @@ type failure = {
   location : string option;
 }
 
+type cover = NoCover | Cover
+
+type label_data = {
+  label_name : string;
+  label_minimum : float;
+  label_annotation : cover;
+}
+
 type log_entry =
   | Annotation of string
   | Footnote of string
+  | Label of label_data
 
 type status =
   | OK
   | Failed of { failure : failure; log : log_entry list }
   | GaveUp
 
+type label_info = {
+  name : string;
+  minimum : float;
+  count : int;
+}
+
 type report = {
   tests : int;
   discards : int;
   status : status;
+  coverage : label_info list;
   seed : Seed.t;
   size : int;
 }
@@ -71,6 +87,16 @@ let annotate s =
 
 let footnote s =
   Effect.perform (WriteLog (Footnote s))
+
+let cover minimum name covered =
+  let ann = if covered then Cover else NoCover in
+  Effect.perform (WriteLog (Label { label_name = name;
+                                     label_minimum = minimum;
+                                     label_annotation = ann }))
+
+let classify name covered = cover 0.0 name covered
+let label name = cover 0.0 name true
+let collect to_string x = cover 0.0 (to_string x) true
 
 (* -- Property type -- *)
 
@@ -147,31 +173,80 @@ let take_smallest shrink_limit tree =
   in
   go tree
 
+(* -- Coverage accumulation -- *)
+
+module LabelMap = Map.Make(String)
+
+type label_count = {
+  lc_minimum : float;
+  lc_count : int;
+}
+
+let journal_coverage (log : log_entry list) : label_count LabelMap.t =
+  List.fold_left (fun acc -> function
+    | Label { label_name; label_minimum; label_annotation } ->
+      let count = match label_annotation with Cover -> 1 | NoCover -> 0 in
+      LabelMap.update label_name (function
+        | None -> Some { lc_minimum = label_minimum; lc_count = count }
+        | Some lc -> Some { lc_count = lc.lc_count + count;
+                            lc_minimum = Float.max lc.lc_minimum label_minimum }
+      ) acc
+    | _ -> acc
+  ) LabelMap.empty log
+
+let merge_coverage a b =
+  LabelMap.union (fun _name x y ->
+    Some { lc_minimum = Float.max x.lc_minimum y.lc_minimum;
+           lc_count = x.lc_count + y.lc_count }
+  ) a b
+
+let coverage_failures tests (cov : label_count LabelMap.t) =
+  LabelMap.fold (fun name lc acc ->
+    let pct = float_of_int lc.lc_count /. float_of_int tests *. 100.0 in
+    if pct < lc.lc_minimum then (name, lc.lc_minimum, pct) :: acc else acc
+  ) cov []
+
+let coverage_to_list (cov : label_count LabelMap.t) : label_info list =
+  LabelMap.fold (fun name lc acc ->
+    { name; minimum = lc.lc_minimum; count = lc.lc_count } :: acc
+  ) cov []
+
 (* -- Runner -- *)
 
 let check_report prop =
   let config = prop.config in
   let initial_seed = Seed.random () in
-  let rec loop tests discards size seed =
+  let rec loop tests discards size seed cov =
     if tests >= config.test_limit then
-      { tests; discards; status = OK; seed = initial_seed; size }
+      let coverage = coverage_to_list cov in
+      let failures = coverage_failures tests cov in
+      if failures <> [] then
+        let msg = String.concat "\n" (List.map (fun (name, min, actual) ->
+          Printf.sprintf "  %s: %.1f%% (minimum: %.1f%%)" name actual min
+        ) failures) in
+        { tests; discards;
+          status = Failed { failure = { message = "Insufficient coverage after "
+            ^ string_of_int tests ^ " tests.\n" ^ msg; location = None };
+            log = [] };
+          coverage; seed = initial_seed; size }
+      else
+        { tests; discards; status = OK; coverage; seed = initial_seed; size }
     else if discards >= config.discard_limit then
-      { tests; discards; status = GaveUp; seed = initial_seed; size }
+      { tests; discards; status = GaveUp;
+        coverage = coverage_to_list cov; seed = initial_seed; size }
     else
       let (s1, s2) = Seed.split seed in
       let current_size = size mod 100 in
       match prop.gen current_size s1 with
       | None ->
-        (* Discard *)
-        loop tests (discards + 1) (size + 1) s2
+        loop tests (discards + 1) (size + 1) s2 cov
       | Some tree ->
-        (* Got a test closure tree *)
         let test_fn = Tree.value tree in
         (match run_test test_fn with
-         | TestPassed _ ->
-           loop (tests + 1) discards (size + 1) s2
+         | TestPassed log ->
+           let test_cov = journal_coverage log in
+           loop (tests + 1) discards (size + 1) s2 (merge_coverage cov test_cov)
          | TestFailed (fail, log) ->
-           (* Found a failure! Now shrink. *)
            let (final_fail, final_log) =
              match take_smallest config.shrink_limit tree with
              | Some (f, l) -> (f, l)
@@ -180,16 +255,28 @@ let check_report prop =
            { tests = tests + 1;
              discards;
              status = Failed { failure = final_fail; log = final_log };
+             coverage = coverage_to_list cov;
              seed = initial_seed;
              size = current_size })
   in
-  loop 0 0 0 initial_seed
+  loop 0 0 0 initial_seed LabelMap.empty
+
+let format_coverage buf tests coverage =
+  if coverage <> [] then
+    List.iter (fun { name; minimum; count } ->
+      let pct = float_of_int count /. float_of_int tests *. 100.0 in
+      let mark = if pct >= minimum then "✓" else "✗" in
+      Buffer.add_string buf
+        (Printf.sprintf "    %s %s  %.1f%% (%d/%d, minimum: %.1f%%)\n"
+           mark name pct count tests minimum)
+    ) coverage
 
 let format_report report =
   let buf = Buffer.create 256 in
   (match report.status with
    | OK ->
-     Buffer.add_string buf (Printf.sprintf "+++ OK, passed %d tests.\n" report.tests)
+     Buffer.add_string buf (Printf.sprintf "+++ OK, passed %d tests.\n" report.tests);
+     format_coverage buf report.tests report.coverage
    | GaveUp ->
      Buffer.add_string buf
        (Printf.sprintf "*** Gave up after %d discards, passed %d tests.\n"
@@ -201,8 +288,10 @@ let format_report report =
        match entry with
        | Annotation s -> Buffer.add_string buf (Printf.sprintf "  %s\n" s)
        | Footnote s -> Buffer.add_string buf (Printf.sprintf "  [footnote] %s\n" s)
+       | Label _ -> ()
      ) log;
-     Buffer.add_string buf (Printf.sprintf "  %s\n" failure.message));
+     Buffer.add_string buf (Printf.sprintf "  %s\n" failure.message);
+     format_coverage buf report.tests report.coverage);
   Buffer.contents buf
 
 let check prop =
@@ -234,6 +323,7 @@ let print_property_result name report =
       match entry with
       | Annotation s -> Printf.printf "      %s\n" s
       | Footnote s -> Printf.printf "      [footnote] %s\n" s
+      | Label _ -> ()
     ) log;
     Printf.printf "      %s\n" failure.message
 
@@ -296,12 +386,14 @@ let check_parallel ?(num_domains = max 1 (Domain.recommended_domain_count () - 1
 let recheck size seed prop =
   match prop.gen size seed with
   | None ->
-    { tests = 1; discards = 1; status = GaveUp; seed; size }
+    { tests = 1; discards = 1; status = GaveUp; coverage = []; seed; size }
   | Some tree ->
     let test_fn = Tree.value tree in
     match run_test test_fn with
-    | TestPassed _ ->
-      { tests = 1; discards = 0; status = OK; seed; size }
+    | TestPassed log ->
+      let cov = journal_coverage log in
+      { tests = 1; discards = 0; status = OK;
+        coverage = coverage_to_list cov; seed; size }
     | TestFailed (fail, log) ->
       let (final_fail, final_log) =
         match take_smallest prop.config.shrink_limit tree with
@@ -311,5 +403,6 @@ let recheck size seed prop =
       { tests = 1;
         discards = 0;
         status = Failed { failure = final_fail; log = final_log };
+        coverage = [];
         seed;
         size }

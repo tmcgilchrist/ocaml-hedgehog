@@ -21,19 +21,35 @@ type failure = {
   location : string option;
 }
 
+type cover = NoCover | Cover
+
+type label_data = {
+  label_name : string;
+  label_minimum : float;
+  label_annotation : cover;
+}
+
 type log_entry =
   | Annotation of string
   | Footnote of string
+  | Label of label_data
 
 type status =
   | OK
   | Failed of { failure : failure; log : log_entry list }
   | GaveUp
 
+type label_info = {
+  name : string;
+  minimum : float;
+  count : int;
+}
+
 type report = {
   tests : int;
   discards : int;
   status : status;
+  coverage : label_info list;
   seed : Seed.t;
   size : int;
 }
@@ -57,6 +73,23 @@ val annotate : string -> unit
 
 val footnote : string -> unit
 (** Log a footnote (shown on failure, after the counterexample). *)
+
+(** {2 Coverage / Classification} *)
+
+val cover : float -> string -> bool -> unit
+(** [cover minimum name condition] requires at least [minimum]% of tests
+    to satisfy [condition] under the given label [name].
+    Example: [cover 30.0 "non-empty" (List.length xs > 0)] *)
+
+val classify : string -> bool -> unit
+(** [classify name condition] records the proportion of tests satisfying
+    [condition]. Like [cover] with 0% minimum (informational only). *)
+
+val label : string -> unit
+(** [label name] labels every test run. Like [cover 0 name true]. *)
+
+val collect : ('a -> string) -> 'a -> unit
+(** [collect to_string x] labels using the string representation of [x]. *)
 
 (** {2 Property construction} *)
 

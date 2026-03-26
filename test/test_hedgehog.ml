@@ -812,6 +812,109 @@ let test_gen_combinators () = group "Gen combinators" (fun () ->
     | None -> false);
 )
 
+(* ---- Coverage tests ---- *)
+let test_coverage () = group "Coverage" (fun () ->
+
+  check "label records all tests" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () -> Property.label "always")) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.OK ->
+      (match (report.coverage : Property.label_info list) with
+       | [{ name = "always"; count; _ }] ->
+         count = report.tests
+       | _ -> false)
+    | _ -> false);
+
+  check "classify records proportion" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () ->
+        Property.classify "even" (x mod 2 = 0);
+        Property.classify "odd" (x mod 2 <> 0))) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.OK ->
+      let has_even = List.exists (fun (li : Property.label_info) -> li.name = "even") report.coverage in
+      let has_odd = List.exists (fun (li : Property.label_info) -> li.name = "odd") report.coverage in
+      has_even && has_odd
+    | _ -> false);
+
+  check "cover passes when met" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 1 100) in
+      return (fun () ->
+        Property.cover 30.0 "positive" (x > 0))) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.OK -> true
+    | _ -> false);
+
+  check "cover fails when not met" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.cover 99.0 "impossible" false)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed _ -> true
+    | _ -> false);
+
+  check "collect creates per-value labels" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* b = bool in
+      return (fun () ->
+        Property.collect string_of_bool b)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.OK ->
+      let has_true = List.exists (fun (li : Property.label_info) -> li.name = "true") report.coverage in
+      let has_false = List.exists (fun (li : Property.label_info) -> li.name = "false") report.coverage in
+      has_true && has_false
+    | _ -> false);
+
+  check "coverage failure produces Failed status with message" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.cover 50.0 "always-false" false)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { failure; _ } ->
+      (* Check that the failure message mentions coverage *)
+      let s = failure.message in
+      let rec has_substring haystack needle i =
+        if i + String.length needle > String.length haystack then false
+        else if String.sub haystack i (String.length needle) = needle then true
+        else has_substring haystack needle (i + 1)
+      in
+      has_substring s "coverage" 0 || has_substring s "Insufficient" 0
+    | _ -> false);
+
+  check "coverage passes with OK status" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () ->
+        Property.cover 0.0 "anything" (x >= 0))) in
+    let report = Property.check_report prop in
+    report.status = Property.OK);
+
+  check "no coverage labels gives OK as before" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () ->
+        Property.assert_ (x >= 0))) in
+    let report = Property.check_report prop in
+    report.status = Property.OK && report.coverage = []);
+)
+
 (* ---- Stm tests ---- *)
 
 (* Correct counter spec *)
@@ -891,6 +994,7 @@ let () =
   test_gen ();
   test_gen_combinators ();
   test_property ();
+  test_coverage ();
   test_stm ();
   Printf.printf "\n=== Summary ===\n";
   Printf.printf "  Passed: %d\n" !tests_passed;
