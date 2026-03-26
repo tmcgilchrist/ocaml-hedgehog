@@ -1,0 +1,4 @@
+(library
+ (name hedgehog_alcotest)
+ (public_name hedgehog-alcotest)
+ (libraries hedgehog alcotest))

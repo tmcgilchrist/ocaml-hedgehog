@@ -82,6 +82,9 @@ val check : property -> bool
 val check_report : property -> report
 (** Run a property and return the full report. *)
 
+val format_report : report -> string
+(** Format a report as a human-readable string. *)
+
 val recheck : int -> Seed.t -> property -> report
 (** Re-run a property at a specific size and seed for reproducing failures. *)
 

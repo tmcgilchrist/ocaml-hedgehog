@@ -133,6 +133,47 @@ let () =
     print_endline "Parallel: OK"
 ```
 
+## Alcotest Integration
+
+The `hedgehog-alcotest` package lets you run Hedgehog properties as
+Alcotest test cases:
+
+```shell
+opam install hedgehog-alcotest
+```
+
+Use `Hedgehog_alcotest.to_alcotest` to wrap a property:
+
+```ocaml
+let () =
+  Alcotest.run "my-tests" [
+    "properties", [
+      Hedgehog_alcotest.to_alcotest "reverse involution"
+        Hedgehog.(Property.property Gen.(
+          let* xs = list (Range.linear 0 100) alpha in
+          return (fun () ->
+            Property.assert_ (List.rev (List.rev xs) = xs))));
+
+      Hedgehog_alcotest.to_alcotest "small lists"
+        Hedgehog.(Property.property Gen.(
+          let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+          return (fun () ->
+            Property.annotate (Printf.sprintf "xs has %d elements" (List.length xs));
+            Property.assert_ (List.length xs < 5))));
+    ]
+  ]
+```
+
+Passing properties return normally. Failures call `Alcotest.fail` with
+the shrunk counterexample:
+
+```
+[FAIL]  properties  1  small lists.
+*** Failed! Falsifiable (after 9 tests):
+  xs has 5 elements
+  Assertion failed
+```
+
 ## Building
 
 ```shell

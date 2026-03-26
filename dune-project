@@ -14,3 +14,12 @@
  (description "Hedgehog is a property-based testing library with integrated shrinking, using OCaml 5 effects for assertions and logging.")
  (depends
   (ocaml (>= 5.0))))
+
+(package
+ (name hedgehog-alcotest)
+ (synopsis "Alcotest integration for Hedgehog property-based testing")
+ (description "Run Hedgehog properties as Alcotest test cases.")
+ (depends
+  (ocaml (>= 5.0))
+  (hedgehog (= :version))
+  (alcotest (>= 1.0))))
