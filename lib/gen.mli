@@ -73,11 +73,46 @@ val list : int Range.t -> 'a t -> 'a list t
 (** Generate a list using a range for the length. Uses {!Tree.interleave}
     for optimal shrinking. *)
 
+val non_empty : int Range.t -> 'a t -> 'a list t
+(** Generate a non-empty list. The first element is always present; the
+    rest uses [list] with the given range. Shrinks will never produce [[]]. *)
+
+val shuffle : 'a list -> 'a list t
+(** Generate a random permutation of a list. Shrinks towards the original
+    order. *)
+
+val subsequence : 'a list -> 'a list t
+(** Generate a random subsequence of a list, preserving order.
+    Shrinks towards [[]]. *)
+
 val option : 'a t -> 'a option t
 (** Generates [None] some of the time. *)
 
+val either : 'a t -> 'b t -> ('a, 'b) Either.t t
+(** Generate either a [Left] or [Right] value with 50/50 probability. *)
+
+val unique : ('a -> 'a -> int) -> int Range.t -> 'a t -> 'a list t
+(** Generate a list of unique elements (no duplicates according to the
+    given comparison function). Shrinks via the underlying list shrinking. *)
+
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** Generate a pair with parallel shrinking. *)
+
+(** {2 Freeze} *)
+
+val freeze : 'a t -> ('a * 'a t) t
+(** [freeze gen] captures the generator's output. Returns a pair of the
+    generated value and a frozen generator that always produces that value. *)
+
+(** {2 Integer width variants} *)
+
+val int32 : int32 Range.t -> int32 t
+(** Generate a random [int32] in the given range, with shrinking towards
+    the origin. Converts through [int] internally (safe on 64-bit OCaml). *)
+
+val int64 : int64 Range.t -> int64 t
+(** Generate a random [int64] in the given range, with shrinking towards
+    the origin. Uses native [int64] arithmetic. *)
 
 (** {2 Conditional} *)
 

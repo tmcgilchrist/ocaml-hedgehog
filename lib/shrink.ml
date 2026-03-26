@@ -42,6 +42,27 @@ let towards_float destination x =
     in
     iterate_halve diff
 
+let halves_int64 n =
+  let rec go n () =
+    if n = 0L then Seq.Nil
+    else Seq.Cons (n, go (Int64.div n 2L))
+  in go n
+
+let towards_int64 destination x =
+  if destination = x then Seq.empty
+  else if destination = 0L && x = 1L then
+    fun () -> Seq.Cons (0L, Seq.empty)
+  else
+    let diff = Int64.sub (Int64.div x 2L) (Int64.div destination 2L) in
+    let h = halves_int64 diff in
+    let mapped = Seq.map (fun d -> Int64.sub x d) h in
+    fun () ->
+      match mapped () with
+      | Seq.Nil -> Seq.Cons (destination, Seq.empty)
+      | Seq.Cons (y, rest) ->
+        if destination = y then Seq.Cons (y, rest)
+        else Seq.Cons (destination, mapped)
+
 let removes k xs =
   let rec go xs =
     match xs with

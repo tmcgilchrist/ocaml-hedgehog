@@ -224,12 +224,45 @@ let list len_range elem_gen size seed =
   let elem_trees = gen_elems len seed1 [] in
   Some (Tree.interleave elem_trees)
 
+let non_empty range elem_gen =
+  let* x = elem_gen in
+  let* xs = list range elem_gen in
+  return (x :: xs)
+
+let shuffle xs =
+  let n = List.length xs in
+  if n <= 1 then return xs
+  else
+    let+ keys = list (Range.singleton n) (int (Range.constant 0 (n * n))) in
+    if List.length keys <> n then xs
+    else
+      let paired = List.combine keys xs in
+      let sorted = List.stable_sort (fun (a, _) (b, _) -> compare a b) paired in
+      List.map snd sorted
+
+let subsequence xs =
+  let n = List.length xs in
+  if n = 0 then return []
+  else
+    let+ mask = list (Range.singleton n) bool in
+    if List.length mask <> n then []
+    else List.map snd (List.filter fst (List.combine mask xs))
+
 let option gen size seed =
   let (n, seed') = Seed.next_int 0 (max 1 size) seed in
   if n = 0 then
     Some (Tree.singleton None)
   else
     map (fun x -> Some x) gen size seed'
+
+let either left_gen right_gen size seed =
+  let (n, seed') = Seed.next_int 0 1 seed in
+  if n = 0 then map Either.left left_gen size seed'
+  else map Either.right right_gen size seed'
+
+let unique cmp range elem_gen =
+  let+ xs = list range elem_gen in
+  List.sort_uniq cmp xs
 
 let pair ga gb = ( and+ ) ga gb
 
@@ -258,6 +291,38 @@ let filter p gen size seed =
           try_gen (k + 1) size' s2
   in
   try_gen 0 size seed
+
+(* -- Freeze -- *)
+
+let freeze gen size seed =
+  match gen size seed with
+  | None -> None
+  | Some tree ->
+    Some (Tree.map (fun x -> (x, fun _sz _sd -> Some (Tree.singleton x))) tree)
+
+(* -- Integer width variants -- *)
+
+let int32 range size seed =
+  let (lo, hi) = Range.bounds size range in
+  let origin = Range.origin range in
+  let int_lo = Int32.to_int lo and int_hi = Int32.to_int hi in
+  let int_origin = Int32.to_int origin in
+  let (n, _) = Seed.next_int int_lo int_hi seed in
+  if n = int_origin then Some (Tree.singleton (Int32.of_int n))
+  else
+    let tree = Tree.unfold Int32.of_int (fun x -> Shrink.towards int_origin x) n in
+    let tree = Tree.cons_child (Int32.of_int int_origin) tree in
+    Some tree
+
+let int64 range size seed =
+  let (lo, hi) = Range.bounds size range in
+  let origin = Range.origin range in
+  let (n, _) = Seed.next_int64_range lo hi seed in
+  if n = origin then Some (Tree.singleton n)
+  else
+    let tree = Tree.unfold Fun.id (fun x -> Shrink.towards_int64 origin x) n in
+    let tree = Tree.cons_child origin tree in
+    Some tree
 
 (* -- Sampling -- *)
 

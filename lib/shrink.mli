@@ -16,6 +16,14 @@ val towards : int -> int -> int Seq.t
 val towards_float : float -> float -> float Seq.t
 (** [towards_float destination x] shrinks a float towards [destination]. *)
 
+val towards_int64 : int64 -> int64 -> int64 Seq.t
+(** [towards_int64 destination x] shrinks an [int64] towards [destination],
+    using binary-search halving. Same algorithm as {!towards} but with
+    [Int64] arithmetic. *)
+
+val halves_int64 : int64 -> int64 Seq.t
+(** Progressive halving of an [int64]. *)
+
 val halves : int -> int Seq.t
 (** Progressive halving of an integral.
 

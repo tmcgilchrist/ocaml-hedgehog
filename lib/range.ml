@@ -86,6 +86,41 @@ let exponential_from z x y =
 let exponential x y =
   exponential_from x x y
 
+let scale_linear_int32 sz0 z n =
+  let sz = max 0 (min 99 sz0) in
+  let z' = Int32.to_int z in
+  let n' = Int32.to_int n in
+  let rng = n' - z' + (compare (n' - z') 0) in
+  let diff = (rng * sz) / 100 in
+  Int32.of_int (z' + diff)
+
+let scale_linear_int64 sz0 z n =
+  let sz = max 0 (min 99 sz0) in
+  let rng64 = Int64.sub n z in
+  let rng = Int64.add rng64 (Int64.of_int (Int64.compare rng64 0L)) in
+  let diff = Int64.div (Int64.mul rng (Int64.of_int sz)) 100L in
+  Int64.add z diff
+
+let constant_int32 x y =
+  { origin = x; bounds = fun _ -> (x, y) }
+
+let linear_int32 x y =
+  { origin = x;
+    bounds = fun sz ->
+      let x_sized = clamp x y (scale_linear_int32 sz x x) in
+      let y_sized = clamp x y (scale_linear_int32 sz x y) in
+      (x_sized, y_sized) }
+
+let constant_int64 x y =
+  { origin = x; bounds = fun _ -> (x, y) }
+
+let linear_int64 x y =
+  { origin = x;
+    bounds = fun sz ->
+      let x_sized = clamp x y (scale_linear_int64 sz x x) in
+      let y_sized = clamp x y (scale_linear_int64 sz x y) in
+      (x_sized, y_sized) }
+
 let exponential_float_from z x y =
   { origin = z;
     bounds = fun sz ->

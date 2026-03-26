@@ -49,6 +49,22 @@ val linear_frac : float -> float -> float t
 val linear_frac_from : float -> float -> float -> float t
 (** Like {!linear_from}, but for fractional values. *)
 
+(** {2 Int32} *)
+
+val constant_int32 : int32 -> int32 -> int32 t
+(** A constant range for [int32] values, unaffected by size parameter. *)
+
+val linear_int32 : int32 -> int32 -> int32 t
+(** A linear range for [int32] values that scales with the size parameter. *)
+
+(** {2 Int64} *)
+
+val constant_int64 : int64 -> int64 -> int64 t
+(** A constant range for [int64] values, unaffected by size parameter. *)
+
+val linear_int64 : int64 -> int64 -> int64 t
+(** A linear range for [int64] values that scales with the size parameter. *)
+
 (** {2 Exponential} *)
 
 val exponential : int -> int -> int t

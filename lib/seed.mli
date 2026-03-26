@@ -27,6 +27,10 @@ val next_int : int -> int -> t -> int * t
 (** [next_int lo hi seed] generates a random [int] in the inclusive range
     [\[lo, hi\]]. *)
 
+val next_int64_range : int64 -> int64 -> t -> int64 * t
+(** [next_int64_range lo hi seed] generates a random [int64] in the inclusive
+    range [\[lo, hi\]]. *)
+
 val next_float : float -> float -> t -> float * t
 (** [next_float lo hi seed] generates a random [float] in the range
     [\[lo, hi)]. *)

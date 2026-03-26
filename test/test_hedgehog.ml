@@ -640,6 +640,178 @@ let test_property () = group "Property" (fun () ->
     Property.check prop);
 )
 
+(* ---- Gen combinator tests ---- *)
+let test_gen_combinators () = group "Gen combinators" (fun () ->
+  let seed = Hedgehog.Seed.from 42L in
+
+  check "non_empty always produces length >= 1" (fun () ->
+    let g = Hedgehog.Gen.non_empty (Hedgehog.Range.constant 0 5)
+              (Hedgehog.Gen.return 1) in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> List.length (Hedgehog.Tree.value t)
+      | None -> 0
+    ) in
+    Array.for_all (fun n -> n >= 1) results);
+
+  check "non_empty shrinks don't go to []" (fun () ->
+    let g = Hedgehog.Gen.non_empty (Hedgehog.Range.constant 0 5)
+              (Hedgehog.Gen.integral (Hedgehog.Range.constant 0 10)) in
+    match g 30 seed with
+    | Some t ->
+      let rec all_nonempty (Hedgehog.Tree.Node (v, children)) =
+        List.length v >= 1 &&
+        let cs = List.of_seq (Seq.take 20 children) in
+        List.for_all all_nonempty cs
+      in
+      all_nonempty t
+    | None -> false);
+
+  check "shuffle produces a permutation" (fun () ->
+    let xs = [1; 2; 3; 4; 5] in
+    let g = Hedgehog.Gen.shuffle xs in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> []
+    ) in
+    Array.for_all (fun ys ->
+      List.length ys = List.length xs &&
+      List.for_all (fun x -> List.mem x ys) xs
+    ) results);
+
+  check "shuffle shrinks toward original order" (fun () ->
+    let xs = [1; 2; 3; 4] in
+    let g = Hedgehog.Gen.shuffle xs in
+    match g 30 seed with
+    | Some t ->
+      (* Walk shrinks to the end; the deepest should be closer to original *)
+      let rec last_shrink (Hedgehog.Tree.Node (v, children)) =
+        match children () with
+        | Seq.Nil -> v
+        | Seq.Cons (child, _) -> last_shrink child
+      in
+      let final = last_shrink t in
+      (* Final shrink should be original order *)
+      final = xs
+    | None -> false);
+
+  check "subsequence produces a subsequence" (fun () ->
+    let xs = [1; 2; 3; 4; 5] in
+    let g = Hedgehog.Gen.subsequence xs in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> []
+    ) in
+    Array.for_all (fun ys ->
+      List.length ys <= List.length xs &&
+      List.for_all (fun y -> List.mem y xs) ys
+    ) results);
+
+  check "subsequence shrinks toward []" (fun () ->
+    let xs = [1; 2; 3; 4; 5] in
+    let g = Hedgehog.Gen.subsequence xs in
+    match g 30 seed with
+    | Some t ->
+      let rec last_shrink (Hedgehog.Tree.Node (v, children)) =
+        match children () with
+        | Seq.Nil -> v
+        | Seq.Cons (child, _) -> last_shrink child
+      in
+      let final = last_shrink t in
+      final = []
+    | None -> false);
+
+  check "either generates both Left and Right" (fun () ->
+    let g = Hedgehog.Gen.either (Hedgehog.Gen.return 1) (Hedgehog.Gen.return 2) in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> Either.Left 0
+    ) in
+    let has_left = Array.exists (fun v -> match v with Either.Left _ -> true | _ -> false) results in
+    let has_right = Array.exists (fun v -> match v with Either.Right _ -> true | _ -> false) results in
+    has_left && has_right);
+
+  check "unique produces no duplicates" (fun () ->
+    let g = Hedgehog.Gen.unique Int.compare
+              (Hedgehog.Range.constant 5 10)
+              (Hedgehog.Gen.integral (Hedgehog.Range.constant 0 100)) in
+    let results = Array.init 20 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> []
+    ) in
+    Array.for_all (fun xs ->
+      let sorted = List.sort_uniq Int.compare xs in
+      List.length sorted = List.length xs
+    ) results);
+
+  check "freeze returns same value from frozen generator" (fun () ->
+    let g = Hedgehog.Gen.freeze (Hedgehog.Gen.integral (Hedgehog.Range.constant 0 100)) in
+    match g 30 seed with
+    | Some t ->
+      let (v, frozen_gen) = Hedgehog.Tree.value t in
+      (* The frozen generator should always produce the same value *)
+      let s2 = Hedgehog.Seed.from 999L in
+      (match frozen_gen 50 s2 with
+       | Some t2 -> Hedgehog.Tree.value t2 = v
+       | None -> false)
+    | None -> false);
+
+  check "int32 generates in range" (fun () ->
+    let g = Hedgehog.Gen.int32 (Hedgehog.Range.constant_int32 10l 20l) in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> -1l
+    ) in
+    Array.for_all (fun v -> v >= 10l && v <= 20l) results);
+
+  check "int32 shrinks toward origin" (fun () ->
+    let g = Hedgehog.Gen.int32 (Hedgehog.Range.constant_int32 0l 100l) in
+    match g 30 seed with
+    | Some t ->
+      let v = Hedgehog.Tree.value t in
+      v >= 0l && v <= 100l &&
+      (match Hedgehog.Tree.children t () with
+       | Seq.Nil -> v = 0l
+       | Seq.Cons (child, _) ->
+         let cv = Hedgehog.Tree.value child in
+         Int32.abs cv <= Int32.abs v)
+    | None -> false);
+
+  check "int64 generates in range" (fun () ->
+    let g = Hedgehog.Gen.int64 (Hedgehog.Range.constant_int64 10L 20L) in
+    let results = Array.init 50 (fun i ->
+      let s = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
+      match g 30 s with
+      | Some t -> Hedgehog.Tree.value t
+      | None -> -1L
+    ) in
+    Array.for_all (fun v -> v >= 10L && v <= 20L) results);
+
+  check "int64 shrinks toward origin" (fun () ->
+    let g = Hedgehog.Gen.int64 (Hedgehog.Range.constant_int64 0L 100L) in
+    match g 30 seed with
+    | Some t ->
+      let v = Hedgehog.Tree.value t in
+      v >= 0L && v <= 100L &&
+      (match Hedgehog.Tree.children t () with
+       | Seq.Nil -> v = 0L
+       | Seq.Cons (child, _) ->
+         let cv = Hedgehog.Tree.value child in
+         Int64.abs cv <= Int64.abs v)
+    | None -> false);
+)
+
 (* ---- Stm tests ---- *)
 
 (* Correct counter spec *)
@@ -717,6 +889,7 @@ let () =
   test_shrink ();
   test_range ();
   test_gen ();
+  test_gen_combinators ();
   test_property ();
   test_stm ();
   Printf.printf "\n=== Summary ===\n";

@@ -88,6 +88,18 @@ let next_int lo hi seed =
       let r = ((v_int mod range) + range) mod range in
       (lo + r, s)
 
+let next_int64_range lo hi seed =
+  if lo = hi then (lo, snd (next seed))
+  else
+    let (v, s) = next_int64 seed in
+    let range = Int64.sub hi lo in
+    if range < 0L then
+      (* Unsigned overflow: full int64 range requested *)
+      (v, s)
+    else
+      let r = Int64.rem (Int64.logand v Int64.max_int) (Int64.succ range) in
+      (Int64.add lo r, s)
+
 let next_float lo hi seed =
   let (v, s) = next_int64 seed in
   (* Convert to [0, 1) range *)
