@@ -108,6 +108,18 @@ type property = {
 let property ?(config = default_config) gen =
   { config; gen }
 
+let map_config f prop =
+  { prop with config = f prop.config }
+
+let with_tests n =
+  map_config (fun c -> { c with test_limit = n })
+
+let with_shrinks n =
+  map_config (fun c -> { c with shrink_limit = n })
+
+let with_discards n =
+  map_config (fun c -> { c with discard_limit = n })
+
 (* -- Effect handler: run a test closure and capture result -- *)
 
 type test_result =

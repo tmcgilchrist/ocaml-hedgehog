@@ -638,6 +638,57 @@ let test_property () = group "Property" (fun () ->
       return (fun () ->
         Property.assert_ (x + y >= 0))) in
     Property.check prop);
+
+  check "with_tests changes test count" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () -> Property.assert_ (x >= 0)))
+      |> Property.with_tests 10 in
+    let report = Property.check_report prop in
+    report.tests = 10 && report.status = Property.OK);
+
+  check "with_shrinks 0 disables shrinking" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* n = int (Range.linear 0 1000) in
+      return (fun () ->
+        Property.annotate (Printf.sprintf "n = %d" n);
+        Property.assert_ (n < 500)))
+      |> Property.with_shrinks 0 in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { log; _ } ->
+      (* With 0 shrinks, the counterexample should NOT be shrunk to 500 *)
+      List.exists (fun entry ->
+        match entry with
+        | Property.Annotation s ->
+          (try
+             let n = Scanf.sscanf s "n = %d" Fun.id in
+             n > 500
+           with _ -> false)
+        | _ -> false
+      ) log
+    | _ -> false);
+
+  check "with_discards affects give-up" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.discard
+      |> Property.with_discards 3 in
+    let report = Property.check_report prop in
+    report.status = Property.GaveUp && report.discards = 3);
+
+  check "builders compose via pipe" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () -> Property.assert_ (x >= 0)))
+      |> Property.with_tests 50
+      |> Property.with_shrinks 200
+      |> Property.with_discards 10 in
+    let report = Property.check_report prop in
+    (* with_tests 50: exactly 50 tests run *)
+    report.tests = 50 && report.status = Property.OK);
 )
 
 (* ---- Gen combinator tests ---- *)

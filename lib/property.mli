@@ -107,6 +107,17 @@ val property : ?config:config -> (unit -> unit) Gen.t -> property
             assert_ (List.rev (List.rev xs) = xs)))
     ]} *)
 
+(** {2 Config builders} *)
+
+val with_tests : int -> property -> property
+(** Set the number of tests to run. Default [100]. *)
+
+val with_shrinks : int -> property -> property
+(** Set the maximum number of shrinks to perform. Default [1000]. *)
+
+val with_discards : int -> property -> property
+(** Set the maximum number of discards before giving up. Default [100]. *)
+
 (** {2 Runner} *)
 
 val check : property -> bool
