@@ -6,10 +6,13 @@
 
 (** {2 Configuration} *)
 
+type verbosity = Quiet | Normal
+
 type config = {
   test_limit : int;
   discard_limit : int;
   shrink_limit : int;
+  verbosity : verbosity;
 }
 
 val default_config : config
@@ -129,6 +132,9 @@ val with_shrinks : int -> property -> property
 
 val with_discards : int -> property -> property
 (** Set the maximum number of discards before giving up. Default [100]. *)
+
+val with_verbose : property -> property
+(** Enable live progress reporting to stderr during property checking. *)
 
 (** {2 Runner} *)
 

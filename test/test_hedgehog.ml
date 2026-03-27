@@ -744,6 +744,44 @@ let test_property () = group "Property" (fun () ->
       failure.message = "bad"
     | _ -> false);
 
+  check "with_verbose passing property" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* x = int (Range.constant 0 100) in
+      return (fun () -> Property.assert_ (x >= 0)))
+      |> Property.with_verbose
+      |> Property.with_tests 10 in
+    let report = Property.check_report prop in
+    report.tests = 10 && report.status = Property.OK);
+
+  check "with_verbose failing property still shrinks" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* n = int (Range.linear 0 1000) in
+      return (fun () ->
+        Property.annotate (Printf.sprintf "n = %d" n);
+        Property.assert_ (n < 500)))
+      |> Property.with_verbose in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { log; _ } ->
+      List.exists (fun entry ->
+        match entry with
+        | Property.Annotation s ->
+          (try Scanf.sscanf s "n = %d" Fun.id = 500
+           with _ -> false)
+        | _ -> false
+      ) log
+    | _ -> false);
+
+  check "with_verbose give-up property" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.discard
+      |> Property.with_verbose
+      |> Property.with_discards 3 in
+    let report = Property.check_report prop in
+    report.status = Property.GaveUp && report.discards = 3);
+
   check "builders compose via pipe" (fun () ->
     let open Hedgehog in
     let prop = Property.property Gen.(

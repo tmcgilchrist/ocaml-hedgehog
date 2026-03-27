@@ -6,16 +6,20 @@
 
 (* -- Configuration -- *)
 
+type verbosity = Quiet | Normal
+
 type config = {
   test_limit : int;
   discard_limit : int;
   shrink_limit : int;
+  verbosity : verbosity;
 }
 
 let default_config = {
   test_limit = 100;
   discard_limit = 100;
   shrink_limit = 1000;
+  verbosity = Quiet;
 }
 
 (* -- Result types -- *)
@@ -137,6 +141,9 @@ let with_shrinks n =
 let with_discards n =
   map_config (fun c -> { c with discard_limit = n })
 
+let with_verbose =
+  map_config (fun c -> { c with verbosity = Normal })
+
 (* -- Effect handler: run a test closure and capture result -- *)
 
 type test_result =
@@ -166,8 +173,16 @@ let run_test (f : unit -> unit) : test_result =
 
 (* -- Shrinking: walk the tree to find minimal counterexample -- *)
 
-let take_smallest shrink_limit tree =
+let take_smallest verbosity shrink_limit tree =
   let shrinks_performed = ref 0 in
+  let print_shrink () =
+    match verbosity with
+    | Normal ->
+      Printf.eprintf "\r  ↓ %d shrink%s%!"
+        !shrinks_performed
+        (if !shrinks_performed = 1 then "" else "s")
+    | Quiet -> ()
+  in
   let rec go (Tree.Node (test_fn, children)) =
     match run_test test_fn with
     | TestPassed _ ->
@@ -185,6 +200,7 @@ let take_smallest shrink_limit tree =
             | Seq.Nil -> ()
             | Seq.Cons (child, rest) ->
               incr shrinks_performed;
+              print_shrink ();
               (match go child with
                | Some (f, l) ->
                  result := (f, l);
@@ -245,7 +261,25 @@ let coverage_to_list (cov : label_count LabelMap.t) : label_info list =
 let check_report prop =
   let config = prop.config in
   let initial_seed = Seed.random () in
+  let print_progress tests discards =
+    match config.verbosity with
+    | Normal ->
+      if discards > 0 then
+        Printf.eprintf "\r  %d / %d tests, %d discards%!"
+          tests config.test_limit discards
+      else
+        Printf.eprintf "\r  %d / %d tests%!"
+          tests config.test_limit
+    | Quiet -> ()
+  in
+  let clear_progress () =
+    match config.verbosity with
+    | Normal ->
+      Printf.eprintf "\r                                        \r%!"
+    | Quiet -> ()
+  in
   let rec loop tests discards size seed cov =
+    print_progress tests discards;
     if tests >= config.test_limit then
       let coverage = coverage_to_list cov in
       let failures = coverage_failures tests cov in
@@ -276,11 +310,13 @@ let check_report prop =
            let test_cov = journal_coverage log in
            loop (tests + 1) discards (size + 1) s2 (merge_coverage cov test_cov)
          | TestFailed (fail, log) ->
+           clear_progress ();
            let (final_fail, final_log) =
-             match take_smallest config.shrink_limit tree with
+             match take_smallest config.verbosity config.shrink_limit tree with
              | Some (f, l) -> (f, l)
              | None -> (fail, log)
            in
+           clear_progress ();
            { tests = tests + 1;
              discards;
              status = Failed { failure = final_fail; log = final_log };
@@ -288,7 +324,9 @@ let check_report prop =
              seed = initial_seed;
              size = current_size })
   in
-  loop 0 0 0 initial_seed LabelMap.empty
+  let report = loop 0 0 0 initial_seed LabelMap.empty in
+  clear_progress ();
+  report
 
 let format_coverage buf tests coverage =
   if coverage <> [] then
@@ -425,7 +463,7 @@ let recheck size seed prop =
         coverage = coverage_to_list cov; seed; size }
     | TestFailed (fail, log) ->
       let (final_fail, final_log) =
-        match take_smallest prop.config.shrink_limit tree with
+        match take_smallest prop.config.verbosity prop.config.shrink_limit tree with
         | Some (f, l) -> (f, l)
         | None -> (fail, log)
       in
