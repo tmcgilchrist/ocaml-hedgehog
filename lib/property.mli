@@ -74,6 +74,18 @@ val annotate : string -> unit
 val footnote : string -> unit
 (** Log a footnote (shown on failure, after the counterexample). *)
 
+(** {2 Round-trip testing} *)
+
+val tripping : ('a -> string) -> ('b -> string) -> ('a -> 'b) -> ('b -> 'a option) -> 'a -> unit
+(** [tripping show_a show_b encode decode x] encodes [x] with [encode],
+    then decodes with [decode], and asserts that the round-trip produces
+    [Some x]. On failure, annotates the original, intermediate, and
+    round-trip values. *)
+
+val eval_result : ('e -> string) -> ('a, 'e) result -> 'a
+(** [eval_result show_error r] extracts [Ok x] or fails the property
+    with [show_error e] when [r] is [Error e]. *)
+
 (** {2 Coverage / Classification} *)
 
 val cover : float -> string -> bool -> unit

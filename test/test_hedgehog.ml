@@ -678,6 +678,72 @@ let test_property () = group "Property" (fun () ->
     let report = Property.check_report prop in
     report.status = Property.GaveUp && report.discards = 3);
 
+  check "tripping succeeds on valid round-trip" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      let* n = int (Range.constant 0 1000) in
+      return (fun () ->
+        Property.tripping string_of_int Fun.id
+          string_of_int int_of_string_opt n)) in
+    Property.check prop);
+
+  check "tripping fails when decode returns None" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.tripping string_of_int Fun.id
+          string_of_int (fun _ -> None) 42)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed _ -> true
+    | _ -> false);
+
+  check "tripping fails when decode returns wrong value" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.tripping string_of_int Fun.id
+          string_of_int (fun _ -> Some 999) 42)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed _ -> true
+    | _ -> false);
+
+  check "tripping annotates on failure" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.tripping string_of_int Fun.id
+          string_of_int (fun _ -> None) 42)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { log; _ } ->
+      let annotations = List.filter_map (function
+        | Property.Annotation s -> Some s
+        | _ -> None) log in
+      (* 3 annotations: Original, Intermediate, Roundtrip *)
+      List.length annotations = 3
+    | _ -> false);
+
+  check "eval_result extracts Ok" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        let v = Property.eval_result Fun.id (Ok 42) in
+        Property.assert_ (v = 42))) in
+    Property.check prop);
+
+  check "eval_result fails on Error" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        ignore (Property.eval_result Fun.id (Error "bad")))) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { failure; _ } ->
+      failure.message = "bad"
+    | _ -> false);
+
   check "builders compose via pipe" (fun () ->
     let open Hedgehog in
     let prop = Property.property Gen.(

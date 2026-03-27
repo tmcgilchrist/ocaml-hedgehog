@@ -88,6 +88,23 @@ let annotate s =
 let footnote s =
   Effect.perform (WriteLog (Footnote s))
 
+let tripping show_a show_b encode decode x =
+  let b = encode x in
+  match decode b with
+  | Some y when y = x -> ()
+  | other ->
+    annotate ("Original:     " ^ show_a x);
+    annotate ("Intermediate: " ^ show_b b);
+    (match other with
+     | None -> annotate "Roundtrip:    None"
+     | Some y -> annotate ("Roundtrip:    " ^ show_a y));
+    Effect.perform (Fail { message = "Roundtrip failed"; location = None })
+
+let eval_result show_error = function
+  | Ok x -> x
+  | Error e ->
+    Effect.perform (Fail { message = show_error e; location = None })
+
 let cover minimum name covered =
   let ann = if covered then Cover else NoCover in
   Effect.perform (WriteLog (Label { label_name = name;
