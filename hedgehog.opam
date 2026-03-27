@@ -10,7 +10,7 @@ homepage: "https://github.com/tmcgilchrist/ocaml-hedgehog"
 bug-reports: "https://github.com/tmcgilchrist/ocaml-hedgehog/issues"
 depends: [
   "dune" {>= "3.0"}
-  "ocaml" {>= "5.0"}
+  "ocaml" {>= "5.1"}
   "domainslib" {>= "0.5"}
   "odoc" {with-doc}
 ]

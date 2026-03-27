@@ -22,6 +22,7 @@ val default_config : config
 type failure = {
   message : string;
   location : string option;
+  diff : Diff.t option;
 }
 
 type cover = NoCover | Cover
@@ -144,8 +145,10 @@ val check : property -> bool
 val check_report : property -> report
 (** Run a property and return the full report. *)
 
-val format_report : report -> string
-(** Format a report as a human-readable string. *)
+val format_report : ?color:bool -> report -> string
+(** Format a report as a human-readable string.
+    When [~color:true], ANSI escape codes are included for colored output.
+    Defaults to [false]. *)
 
 (** {2 Group runner} *)
 

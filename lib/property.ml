@@ -22,11 +22,21 @@ let default_config = {
   verbosity = Quiet;
 }
 
+(* -- ANSI color helpers -- *)
+
+let ansi_red = "\027[31m"
+let ansi_green = "\027[32m"
+let ansi_yellow = "\027[33m"
+let ansi_bold = "\027[1m"
+let ansi_reset = "\027[0m"
+let with_color color s = color ^ s ^ ansi_reset
+
 (* -- Result types -- *)
 
 type failure = {
   message : string;
   location : string option;
+  diff : Diff.t option;
 }
 
 type cover = NoCover | Cover
@@ -72,19 +82,20 @@ type _ Effect.t +=
 
 let assert_ b =
   if not b then
-    Effect.perform (Fail { message = "Assertion failed"; location = None })
+    Effect.perform (Fail { message = "Assertion failed"; location = None; diff = None })
 
 let ( === ) a b =
   if a <> b then
-    Effect.perform (Fail { message = "not equal"; location = None })
+    Effect.perform (Fail { message = "not equal"; location = None; diff = None })
 
 let diff show_a eq show_b a b =
   if not (eq a b) then
-    let msg = Printf.sprintf "expected: %s\n got: %s" (show_a a) (show_b b) in
-    Effect.perform (Fail { message = msg; location = None })
+    let sa = show_a a and sb = show_b b in
+    let d = Diff.of_strings sa sb in
+    Effect.perform (Fail { message = ""; location = None; diff = Some d })
 
 let failure () =
-  Effect.perform (Fail { message = "explicit failure"; location = None })
+  Effect.perform (Fail { message = "explicit failure"; location = None; diff = None })
 
 let annotate s =
   Effect.perform (WriteLog (Annotation s))
@@ -102,12 +113,12 @@ let tripping show_a show_b encode decode x =
     (match other with
      | None -> annotate "Roundtrip:    None"
      | Some y -> annotate ("Roundtrip:    " ^ show_a y));
-    Effect.perform (Fail { message = "Roundtrip failed"; location = None })
+    Effect.perform (Fail { message = "Roundtrip failed"; location = None; diff = None })
 
 let eval_result show_error = function
   | Ok x -> x
   | Error e ->
-    Effect.perform (Fail { message = show_error e; location = None })
+    Effect.perform (Fail { message = show_error e; location = None; diff = None })
 
 let cover minimum name covered =
   let ann = if covered then Cover else NoCover in
@@ -156,7 +167,7 @@ let run_test (f : unit -> unit) : test_result =
     Effect.Deep.match_with f ()
       { retc = (fun () -> TestPassed (List.rev !log));
         exnc = (fun e ->
-          TestFailed ({ message = Printexc.to_string e; location = None },
+          TestFailed ({ message = Printexc.to_string e; location = None; diff = None },
                       List.rev !log));
         effc = fun (type a) (eff : a Effect.t) ->
           match eff with
@@ -289,7 +300,8 @@ let check_report prop =
         ) failures) in
         { tests; discards;
           status = Failed { failure = { message = "Insufficient coverage after "
-            ^ string_of_int tests ^ " tests.\n" ^ msg; location = None };
+            ^ string_of_int tests ^ " tests.\n" ^ msg; location = None;
+            diff = None };
             log = [] };
           coverage; seed = initial_seed; size }
       else
@@ -328,44 +340,68 @@ let check_report prop =
   clear_progress ();
   report
 
-let format_coverage buf tests coverage =
+let format_diff ~color buf d =
+  List.iter (fun edit ->
+    match edit with
+    | Diff.Same line ->
+      Buffer.add_string buf (Printf.sprintf "    %s\n" line)
+    | Diff.Removed line ->
+      let s = Printf.sprintf "  - %s\n" line in
+      Buffer.add_string buf (if color then with_color ansi_red s else s)
+    | Diff.Added line ->
+      let s = Printf.sprintf "  + %s\n" line in
+      Buffer.add_string buf (if color then with_color ansi_green s else s)
+  ) d.Diff.edits
+
+let format_coverage ~color buf tests coverage =
   if coverage <> [] then
     List.iter (fun { name; minimum; count } ->
       let pct = float_of_int count /. float_of_int tests *. 100.0 in
-      let mark = if pct >= minimum then "✓" else "✗" in
+      let pass = pct >= minimum in
+      let mark = if pass then "✓" else "✗" in
+      let line = Printf.sprintf "    %s %s  %.1f%% (%d/%d, minimum: %.1f%%)\n"
+           mark name pct count tests minimum in
       Buffer.add_string buf
-        (Printf.sprintf "    %s %s  %.1f%% (%d/%d, minimum: %.1f%%)\n"
-           mark name pct count tests minimum)
+        (if color then
+           with_color (if pass then ansi_green else ansi_red) line
+         else line)
     ) coverage
 
-let format_report report =
+let format_report ?(color = false) report =
   let buf = Buffer.create 256 in
   (match report.status with
    | OK ->
-     Buffer.add_string buf (Printf.sprintf "+++ OK, passed %d tests.\n" report.tests);
-     format_coverage buf report.tests report.coverage
+     let line = Printf.sprintf "+++ OK, passed %d tests.\n" report.tests in
+     Buffer.add_string buf (if color then with_color ansi_green line else line);
+     format_coverage ~color buf report.tests report.coverage
    | GaveUp ->
-     Buffer.add_string buf
-       (Printf.sprintf "*** Gave up after %d discards, passed %d tests.\n"
-          report.discards report.tests)
+     let line = Printf.sprintf "*** Gave up after %d discards, passed %d tests.\n"
+          report.discards report.tests in
+     Buffer.add_string buf (if color then with_color ansi_yellow line else line)
    | Failed { failure; log } ->
-     Buffer.add_string buf
-       (Printf.sprintf "*** Failed! Falsifiable (after %d tests):\n" report.tests);
+     let line = Printf.sprintf "*** Failed! Falsifiable (after %d tests):\n" report.tests in
+     Buffer.add_string buf (if color then with_color ansi_red line else line);
      List.iter (fun entry ->
        match entry with
        | Annotation s -> Buffer.add_string buf (Printf.sprintf "  %s\n" s)
        | Footnote s -> Buffer.add_string buf (Printf.sprintf "  [footnote] %s\n" s)
        | Label _ -> ()
      ) log;
-     Buffer.add_string buf (Printf.sprintf "  %s\n" failure.message);
-     format_coverage buf report.tests report.coverage);
+     (match failure.diff with
+      | Some d -> format_diff ~color buf d
+      | None ->
+        if failure.message <> "" then
+          Buffer.add_string buf (Printf.sprintf "  %s\n" failure.message));
+     format_coverage ~color buf report.tests report.coverage);
   Buffer.contents buf
 
 let check prop =
   let report = check_report prop in
   (match report.status with
    | OK -> ()
-   | _ -> print_string (format_report report));
+   | _ ->
+     let color = Out_channel.isatty Out_channel.stdout in
+     print_string (format_report ~color report));
   match report.status with
   | OK -> true
   | _ -> false
@@ -377,57 +413,78 @@ type group = {
   properties : (string * property) list;
 }
 
-let print_property_result name report =
+let print_property_result ~color name report =
   match report.status with
   | OK ->
-    Printf.printf "  ✓ %s passed %d tests.\n" name report.tests
+    let mark = if color then with_color ansi_green "✓" else "✓" in
+    Printf.printf "  %s %s passed %d tests.\n" mark name report.tests
   | GaveUp ->
-    Printf.printf "  ⚐ %s gave up after %d discards, only %d tests.\n"
-      name report.discards report.tests
+    let mark = if color then with_color ansi_yellow "⚐" else "⚐" in
+    Printf.printf "  %s %s gave up after %d discards, only %d tests.\n"
+      mark name report.discards report.tests
   | Failed { failure; log } ->
-    Printf.printf "  ✗ %s failed after %d tests.\n" name report.tests;
+    let mark = if color then with_color ansi_red "✗" else "✗" in
+    Printf.printf "  %s %s failed after %d tests.\n" mark name report.tests;
     List.iter (fun entry ->
       match entry with
       | Annotation s -> Printf.printf "      %s\n" s
       | Footnote s -> Printf.printf "      [footnote] %s\n" s
       | Label _ -> ()
     ) log;
-    Printf.printf "      %s\n" failure.message
+    (match failure.diff with
+     | Some d ->
+       let buf = Buffer.create 128 in
+       format_diff ~color buf d;
+       print_string (Buffer.contents buf)
+     | None ->
+       let msg = Printf.sprintf "      %s\n" failure.message in
+       print_string (if color then with_color ansi_red msg else msg))
 
-let print_group_footer ok failed gave_up =
+let print_group_footer ~color ok failed gave_up =
   let bar = "━━━" in
   let parts = ref [] in
-  if failed > 0 then
-    parts := Printf.sprintf "%d failed" failed :: !parts;
-  if gave_up > 0 then
-    parts := Printf.sprintf "%d gave up" gave_up :: !parts;
-  if ok > 0 then
-    parts := Printf.sprintf "%d succeeded" ok :: !parts;
+  if failed > 0 then begin
+    let s = Printf.sprintf "%d failed" failed in
+    parts := (if color then with_color ansi_red s else s) :: !parts
+  end;
+  if gave_up > 0 then begin
+    let s = Printf.sprintf "%d gave up" gave_up in
+    parts := (if color then with_color ansi_yellow s else s) :: !parts
+  end;
+  if ok > 0 then begin
+    let s = Printf.sprintf "%d succeeded" ok in
+    parts := (if color then with_color ansi_green s else s) :: !parts
+  end;
   let summary = String.concat ", " (List.rev !parts) in
-  Printf.printf "%s %s. %s\n" bar summary bar;
+  let bar_s = if color then with_color ansi_bold bar else bar in
+  Printf.printf "%s %s. %s\n" bar_s summary bar_s;
   failed = 0 && gave_up = 0
 
 let check_group group =
+  let color = Out_channel.isatty Out_channel.stdout in
   let bar = "━━━" in
-  Printf.printf "%s %s %s\n" bar group.name bar;
+  let bar_s = if color then with_color ansi_bold bar else bar in
+  Printf.printf "%s %s %s\n" bar_s group.name bar_s;
   let ok = ref 0 in
   let failed = ref 0 in
   let gave_up = ref 0 in
   List.iter (fun (name, prop) ->
     let report = check_report prop in
-    print_property_result name report;
+    print_property_result ~color name report;
     match report.status with
     | OK -> incr ok
     | GaveUp -> incr gave_up
     | Failed _ -> incr failed
   ) group.properties;
-  print_group_footer !ok !failed !gave_up
+  print_group_footer ~color !ok !failed !gave_up
 
 let check_sequential = check_group
 
 let check_parallel ?(num_domains = max 1 (Domain.recommended_domain_count () - 1)) group =
+  let color = Out_channel.isatty Out_channel.stdout in
   let bar = "━━━" in
-  Printf.printf "%s %s %s\n" bar group.name bar;
+  let bar_s = if color then with_color ansi_bold bar else bar in
+  Printf.printf "%s %s %s\n" bar_s group.name bar_s;
   let pool = Domainslib.Task.setup_pool ~num_domains () in
   let result = Domainslib.Task.run pool (fun () ->
     let promises = List.map (fun (name, prop) ->
@@ -439,13 +496,13 @@ let check_parallel ?(num_domains = max 1 (Domain.recommended_domain_count () - 1
     in
     let ok = ref 0 and failed = ref 0 and gave_up = ref 0 in
     List.iter (fun (name, report) ->
-      print_property_result name report;
+      print_property_result ~color name report;
       match report.status with
       | OK -> incr ok
       | GaveUp -> incr gave_up
       | Failed _ -> incr failed
     ) results;
-    print_group_footer !ok !failed !gave_up
+    print_group_footer ~color !ok !failed !gave_up
   ) in
   Domainslib.Task.teardown_pool pool;
   result

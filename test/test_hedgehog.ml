@@ -1290,6 +1290,100 @@ let test_stm () = group "Stm" (fun () ->
     | _ -> false);
 )
 
+(* ---- Diff tests ---- *)
+let test_diff () = group "Diff" (fun () ->
+
+  check "identical inputs produce all Same" (fun () ->
+    let d = Hedgehog.Diff.of_strings "hello\nworld" "hello\nworld" in
+    List.for_all (fun e -> match e with Hedgehog.Diff.Same _ -> true | _ -> false) d.edits
+    && List.length d.edits = 2);
+
+  check "completely different produces Removed + Added" (fun () ->
+    let d = Hedgehog.Diff.of_strings "aaa" "bbb" in
+    let has_removed = List.exists (fun e -> match e with Hedgehog.Diff.Removed "aaa" -> true | _ -> false) d.edits in
+    let has_added = List.exists (fun e -> match e with Hedgehog.Diff.Added "bbb" -> true | _ -> false) d.edits in
+    has_removed && has_added);
+
+  check "partial overlap produces correct interleaving" (fun () ->
+    let d = Hedgehog.Diff.of_strings "a\nb\nc" "a\nx\nc" in
+    (* Should be: Same "a", Removed "b", Added "x", Same "c" *)
+    match d.edits with
+    | [Hedgehog.Diff.Same "a"; Hedgehog.Diff.Removed "b"; Hedgehog.Diff.Added "x"; Hedgehog.Diff.Same "c"] -> true
+    | _ -> false);
+
+  check "of_strings splits on newlines correctly" (fun () ->
+    let d = Hedgehog.Diff.of_strings "line1\nline2\nline3" "line1\nline2\nline3" in
+    List.length d.edits = 3
+    && List.for_all (fun e -> match e with Hedgehog.Diff.Same _ -> true | _ -> false) d.edits);
+
+  check "empty string handling" (fun () ->
+    let d = Hedgehog.Diff.of_strings "" "hello" in
+    let has_added = List.exists (fun e -> match e with Hedgehog.Diff.Added "hello" -> true | _ -> false) d.edits in
+    let d2 = Hedgehog.Diff.of_strings "hello" "" in
+    let has_removed = List.exists (fun e -> match e with Hedgehog.Diff.Removed "hello" -> true | _ -> false) d2.edits in
+    let d3 = Hedgehog.Diff.of_strings "" "" in
+    has_added && has_removed && d3.edits = []);
+)
+
+(* ---- Color rendering tests ---- *)
+let test_color_rendering () = group "Color rendering" (fun () ->
+
+  check "diff assertion produces failure.diff = Some" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.diff string_of_int ( = ) string_of_int 1 2)) in
+    let report = Property.check_report prop in
+    match report.status with
+    | Property.Failed { failure; _ } ->
+      (match failure.diff with Some _ -> true | None -> false)
+    | _ -> false);
+
+  check "format_report ~color:false with diff has - / + lines without ANSI" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.diff Fun.id ( = ) Fun.id "old_value" "new_value")) in
+    let report = Property.check_report prop in
+    let s = Property.format_report ~color:false report in
+    let has_minus = let rec f i = if i + 2 > String.length s then false
+      else if String.sub s i 2 = "- " then true else f (i+1) in f 0 in
+    let has_plus = let rec f i = if i + 2 > String.length s then false
+      else if String.sub s i 2 = "+ " then true else f (i+1) in f 0 in
+    let has_ansi = String.contains s '\027' in
+    has_minus && has_plus && not has_ansi);
+
+  check "format_report ~color:true with diff includes ANSI codes" (fun () ->
+    let open Hedgehog in
+    let prop = Property.property Gen.(
+      return (fun () ->
+        Property.diff Fun.id ( = ) Fun.id "old_value" "new_value")) in
+    let report = Property.check_report prop in
+    let s = Property.format_report ~color:true report in
+    String.contains s '\027');
+
+  check "format_report without ~color on OK/Failed/GaveUp has no ANSI codes" (fun () ->
+    let open Hedgehog in
+    (* OK *)
+    let prop_ok = Property.property Gen.(
+      return (fun () -> ())) in
+    let report_ok = Property.check_report prop_ok in
+    let s_ok = Property.format_report report_ok in
+    (* Failed *)
+    let prop_fail = Property.property Gen.(
+      return (fun () -> Property.assert_ false)) in
+    let report_fail = Property.check_report prop_fail in
+    let s_fail = Property.format_report report_fail in
+    (* GaveUp *)
+    let prop_gave = Property.property Gen.discard
+      |> Property.with_discards 3 in
+    let report_gave = Property.check_report prop_gave in
+    let s_gave = Property.format_report report_gave in
+    not (String.contains s_ok '\027') &&
+    not (String.contains s_fail '\027') &&
+    not (String.contains s_gave '\027'));
+)
+
 let () =
   test_seed ();
   test_tree ();
@@ -1301,6 +1395,8 @@ let () =
   test_coverage ();
   test_subterm ();
   test_stm ();
+  test_diff ();
+  test_color_rendering ();
   Printf.printf "\n=== Summary ===\n";
   Printf.printf "  Passed: %d\n" !tests_passed;
   Printf.printf "  Failed: %d\n" !tests_failed;
