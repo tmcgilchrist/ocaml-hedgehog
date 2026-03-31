@@ -14,7 +14,6 @@ val return : 'a -> 'a t
 val bind : 'a t -> ('a -> 'b t) -> 'b t
 val map : ('a -> 'b) -> 'a t -> 'b t
 val apply : ('a -> 'b) t -> 'a t -> 'b t
-
 val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
 val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 val ( and+ ) : 'a t -> 'b t -> ('a * 'b) t
@@ -22,15 +21,15 @@ val ( and+ ) : 'a t -> 'b t -> ('a * 'b) t
 (** {2 Numeric generators} *)
 
 val integral : int Range.t -> int t
-(** Generate a random integer in the given range, with shrinking towards
-    the range's origin via binary search. *)
+(** Generate a random integer in the given range, with shrinking towards the
+    range's origin via binary search. *)
 
 val int : int Range.t -> int t
 (** Alias for {!integral}. *)
 
 val float : float Range.t -> float t
-(** Generate a random float in the given range, shrinking towards the
-    range's origin. *)
+(** Generate a random float in the given range, shrinking towards the range's
+    origin. *)
 
 val bool : bool t
 (** Generate a random boolean, shrinking towards [false]. *)
@@ -53,37 +52,39 @@ val string : int Range.t -> char t -> string t
 (** {2 Choice combinators} *)
 
 val element : 'a list -> 'a t
-(** Randomly select an element from a list. Shrinks towards the first element. *)
+(** Randomly select an element from a list. Shrinks towards the first element.
+*)
 
 val choice : 'a t list -> 'a t
-(** Randomly select a generator from a list. Shrinks towards the first generator. *)
+(** Randomly select a generator from a list. Shrinks towards the first
+    generator. *)
 
 val frequency : (int * 'a t) list -> 'a t
 (** Use weighted distribution to select a generator. Shrinks towards generators
     with smaller indices. *)
 
 val recursive : ('a t list -> 'a t) -> 'a t list -> 'a t list -> 'a t
-(** [recursive f nonrec rec_] selects from [nonrec] and [rec_] generators.
-    When size <= 1, only [nonrec] generators are used. Recursive generators
-    have their size halved. *)
+(** [recursive f nonrec rec_] selects from [nonrec] and [rec_] generators. When
+    size <= 1, only [nonrec] generators are used. Recursive generators have
+    their size halved. *)
 
 (** {2 Collections} *)
 
 val list : int Range.t -> 'a t -> 'a list t
-(** Generate a list using a range for the length. Uses {!Tree.interleave}
-    for optimal shrinking. *)
+(** Generate a list using a range for the length. Uses {!Tree.interleave} for
+    optimal shrinking. *)
 
 val non_empty : int Range.t -> 'a t -> 'a list t
-(** Generate a non-empty list. The first element is always present; the
-    rest uses [list] with the given range. Shrinks will never produce [[]]. *)
+(** Generate a non-empty list. The first element is always present; the rest
+    uses [list] with the given range. Shrinks will never produce [[]]. *)
 
 val shuffle : 'a list -> 'a list t
-(** Generate a random permutation of a list. Shrinks towards the original
-    order. *)
+(** Generate a random permutation of a list. Shrinks towards the original order.
+*)
 
 val subsequence : 'a list -> 'a list t
-(** Generate a random subsequence of a list, preserving order.
-    Shrinks towards [[]]. *)
+(** Generate a random subsequence of a list, preserving order. Shrinks towards
+    [[]]. *)
 
 val option : 'a t -> 'a option t
 (** Generates [None] some of the time. *)
@@ -92,8 +93,8 @@ val either : 'a t -> 'b t -> ('a, 'b) Either.t t
 (** Generate either a [Left] or [Right] value with 50/50 probability. *)
 
 val unique : ('a -> 'a -> int) -> int Range.t -> 'a t -> 'a list t
-(** Generate a list of unique elements (no duplicates according to the
-    given comparison function). Shrinks via the underlying list shrinking. *)
+(** Generate a list of unique elements (no duplicates according to the given
+    comparison function). Shrinks via the underlying list shrinking. *)
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** Generate a pair with parallel shrinking. *)
@@ -107,31 +108,30 @@ val freeze : 'a t -> ('a * 'a t) t
 (** {2 Integer width variants} *)
 
 val int32 : int32 Range.t -> int32 t
-(** Generate a random [int32] in the given range, with shrinking towards
-    the origin. Converts through [int] internally (safe on 64-bit OCaml). *)
+(** Generate a random [int32] in the given range, with shrinking towards the
+    origin. Converts through [int] internally (safe on 64-bit OCaml). *)
 
 val int64 : int64 Range.t -> int64 t
-(** Generate a random [int64] in the given range, with shrinking towards
-    the origin. Uses native [int64] arithmetic. *)
+(** Generate a random [int64] in the given range, with shrinking towards the
+    origin. Uses native [int64] arithmetic. *)
 
 (** {2 Subterm combinators}
 
-    Generate values that shrink to structural subterms.
-    Useful for recursive data types (ASTs, trees, JSON, etc.):
-    if [Neg(e)] fails, the shrinker tries [e] directly before
-    trying [Neg(e')] for smaller [e']. *)
+    Generate values that shrink to structural subterms. Useful for recursive
+    data types (ASTs, trees, JSON, etc.): if [Neg(e)] fails, the shrinker tries
+    [e] directly before trying [Neg(e')] for smaller [e']. *)
 
 val subterm : 'a t -> ('a -> 'a) -> 'a t
 (** [subterm gen f] generates a value by applying [f] to a value from [gen].
     Shrinks include the raw subterm at every level. *)
 
 val subterm2 : 'a t -> 'a t -> ('a -> 'a -> 'a) -> 'a t
-(** [subterm2 g1 g2 f] generates [f x y] from [g1] and [g2].
-    Shrinks include both raw subterms. *)
+(** [subterm2 g1 g2 f] generates [f x y] from [g1] and [g2]. Shrinks include
+    both raw subterms. *)
 
 val subterm3 : 'a t -> 'a t -> 'a t -> ('a -> 'a -> 'a -> 'a) -> 'a t
-(** [subterm3 g1 g2 g3 f] generates [f x y z].
-    Shrinks include all three raw subterms. *)
+(** [subterm3 g1 g2 g3 f] generates [f x y z]. Shrinks include all three raw
+    subterms. *)
 
 val subterm_m : 'a t -> ('a -> 'a t) -> 'a t
 (** Like {!subterm} but [f] returns a generator. *)
@@ -145,8 +145,8 @@ val subterm_m3 : 'a t -> 'a t -> 'a t -> ('a -> 'a -> 'a -> 'a t) -> 'a t
 (** {2 Conditional} *)
 
 val filter : ('a -> bool) -> 'a t -> 'a t
-(** Generate values satisfying a predicate. Retries with growing size.
-    After too many retries, discards. *)
+(** Generate values satisfying a predicate. Retries with growing size. After too
+    many retries, discards. *)
 
 val discard : 'a t
 (** Always discards. *)

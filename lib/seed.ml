@@ -5,10 +5,7 @@
    OCaml's Int64 arithmetic is modular (wraps on overflow), matching
    Haskell's Word64. *)
 
-type t = {
-  value : int64;
-  gamma : int64;
-}
+type t = { value : int64; gamma : int64 }
 
 (* The odd integer closest to 2^64/phi, where phi = (1 + sqrt 5) / 2. *)
 let golden_gamma = 0x9e3779b97f4a7c15L
@@ -30,8 +27,7 @@ let popcount64 x =
   let x = ref x in
   let count = ref 0 in
   for _ = 0 to 63 do
-    if Int64.logand !x 1L <> 0L then
-      incr count;
+    if Int64.logand !x 1L <> 0L then incr count;
     x := Int64.shift_right_logical !x 1
   done;
   !count
@@ -40,14 +36,9 @@ let mix_gamma x =
   let open Int64 in
   let y = logor (mix64variant13 x) 1L in
   let n = popcount64 (logxor y (shift_right_logical y 1)) in
-  if n < 24 then
-    logxor y 0xaaaaaaaaaaaaaaaaL
-  else
-    y
+  if n < 24 then logxor y 0xaaaaaaaaaaaaaaaaL else y
 
-let from x =
-  { value = mix64 x;
-    gamma = mix_gamma (Int64.add x golden_gamma) }
+let from x = { value = mix64 x; gamma = mix_gamma (Int64.add x golden_gamma) }
 
 let random () =
   (* Use stdlib Random to generate seed material without unix dependency. *)
@@ -63,19 +54,18 @@ let next seed =
   (v, { seed with value = v })
 
 let split seed =
-  let (v0, s1) = next seed in
-  let (g0, s2) = next s1 in
+  let v0, s1 = next seed in
+  let g0, s2 = next s1 in
   (s2, { value = mix64 v0; gamma = mix_gamma g0 })
 
 let next_int64 seed =
-  let (v0, s1) = next seed in
+  let v0, s1 = next seed in
   (mix64 v0, s1)
 
 let next_int lo hi seed =
-  if lo = hi then
-    (lo, snd (next seed))
+  if lo = hi then (lo, snd (next seed))
   else
-    let (v, s) = next_int64 seed in
+    let v, s = next_int64 seed in
     (* Map the int64 into [lo, hi] range *)
     let range = hi - lo + 1 in
     if range <= 0 then
@@ -91,7 +81,7 @@ let next_int lo hi seed =
 let next_int64_range lo hi seed =
   if lo = hi then (lo, snd (next seed))
   else
-    let (v, s) = next_int64 seed in
+    let v, s = next_int64 seed in
     let range = Int64.sub hi lo in
     if range < 0L then
       (* Unsigned overflow: full int64 range requested *)
@@ -101,9 +91,10 @@ let next_int64_range lo hi seed =
       (Int64.add lo r, s)
 
 let next_float lo hi seed =
-  let (v, s) = next_int64 seed in
+  let v, s = next_int64 seed in
   (* Convert to [0, 1) range *)
   let u = Int64.to_float (Int64.shift_right_logical v 11) in
-  let unit = u *. (1.0 /. 9007199254740992.0) in (* 2^53 *)
+  let unit = u *. (1.0 /. 9007199254740992.0) in
+  (* 2^53 *)
   let result = lo +. (unit *. (hi -. lo)) in
   (result, s)

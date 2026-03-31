@@ -6,10 +6,7 @@
     The paper's algorithm provides decent randomness for most purposes but
     sacrifices cryptographic-quality randomness in favor of speed. *)
 
-type t = {
-  value : int64;
-  gamma : int64;
-}
+type t = { value : int64; gamma : int64 }
 
 val from : int64 -> t
 (** Create a seed from an [int64] value. *)
@@ -25,15 +22,15 @@ val next_int64 : t -> int64 * t
 
 val next_int : int -> int -> t -> int * t
 (** [next_int lo hi seed] generates a random [int] in the inclusive range
-    [\[lo, hi\]]. *)
+    [[lo, hi]]. *)
 
 val next_int64_range : int64 -> int64 -> t -> int64 * t
 (** [next_int64_range lo hi seed] generates a random [int64] in the inclusive
-    range [\[lo, hi\]]. *)
+    range [[lo, hi]]. *)
 
 val next_float : float -> float -> t -> float * t
-(** [next_float lo hi seed] generates a random [float] in the range
-    [\[lo, hi)]. *)
+(** [next_float lo hi seed] generates a random [float] in the range [\[lo, hi)].
+*)
 
 (** {2 Internal} *)
 

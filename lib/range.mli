@@ -1,16 +1,14 @@
-(** Ranges describe the bounds of numbers to generate, which may or may not
-    be dependent on a size parameter.
+(** Ranges describe the bounds of numbers to generate, which may or may not be
+    dependent on a size parameter.
 
     The size is an integer from 0 to 99 inclusive. As the size goes towards 0,
     generated values shrink towards the {!origin}. *)
 
-type 'a t = {
-  origin : 'a;
-  bounds : int -> 'a * 'a;
-}
+type 'a t = { origin : 'a; bounds : int -> 'a * 'a }
 
 val origin : 'a t -> 'a
-(** Get the origin of a range. When shrinking, values shrink towards the origin. *)
+(** Get the origin of a range. When shrinking, values shrink towards the origin.
+*)
 
 val bounds : int -> 'a t -> 'a * 'a
 (** Get the bounds of a range for a given size. *)
@@ -27,21 +25,22 @@ val singleton : 'a -> 'a t
 (** A range representing a single constant value. *)
 
 val constant : int -> int -> int t
-(** A constant range unaffected by size parameter. Origin is the first argument. *)
+(** A constant range unaffected by size parameter. Origin is the first argument.
+*)
 
 val constant_from : int -> int -> int -> int t
-(** [constant_from origin lo hi] creates a constant range from [lo] to [hi]
-    with the given [origin]. *)
+(** [constant_from origin lo hi] creates a constant range from [lo] to [hi] with
+    the given [origin]. *)
 
 (** {2 Linear} *)
 
 val linear : int -> int -> int t
-(** A range which scales the bounds linearly with the size parameter.
-    Origin is the first argument. *)
+(** A range which scales the bounds linearly with the size parameter. Origin is
+    the first argument. *)
 
 val linear_from : int -> int -> int -> int t
-(** [linear_from origin lo hi] creates a linear range from [lo] to [hi]
-    with the given [origin]. *)
+(** [linear_from origin lo hi] creates a linear range from [lo] to [hi] with the
+    given [origin]. *)
 
 val linear_frac : float -> float -> float t
 (** Like {!linear}, but for fractional values. *)

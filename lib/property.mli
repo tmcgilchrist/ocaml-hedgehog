@@ -1,8 +1,8 @@
 (** Property testing with OCaml 5 effects for assertions and logging.
 
     Properties are built by combining generators with effectful test bodies.
-    Assertions, logging, and failure are expressed as algebraic effects,
-    handled by the property runner. *)
+    Assertions, logging, and failure are expressed as algebraic effects, handled
+    by the property runner. *)
 
 (** {2 Configuration} *)
 
@@ -43,11 +43,7 @@ type status =
   | Failed of { failure : failure; log : log_entry list }
   | GaveUp
 
-type label_info = {
-  name : string;
-  minimum : float;
-  count : int;
-}
+type label_info = { name : string; minimum : float; count : int }
 
 type report = {
   tests : int;
@@ -66,7 +62,8 @@ val assert_ : bool -> unit
 val ( === ) : 'a -> 'a -> unit
 (** Assert structural equality. *)
 
-val diff : ('a -> string) -> ('a -> 'b -> bool) -> ('b -> string) -> 'a -> 'b -> unit
+val diff :
+  ('a -> string) -> ('a -> 'b -> bool) -> ('b -> string) -> 'a -> 'b -> unit
 (** [diff show_a eq show_b a b] asserts [eq a b], showing a diff on failure. *)
 
 val failure : unit -> 'a
@@ -80,22 +77,27 @@ val footnote : string -> unit
 
 (** {2 Round-trip testing} *)
 
-val tripping : ('a -> string) -> ('b -> string) -> ('a -> 'b) -> ('b -> 'a option) -> 'a -> unit
-(** [tripping show_a show_b encode decode x] encodes [x] with [encode],
-    then decodes with [decode], and asserts that the round-trip produces
-    [Some x]. On failure, annotates the original, intermediate, and
-    round-trip values. *)
+val tripping :
+  ('a -> string) ->
+  ('b -> string) ->
+  ('a -> 'b) ->
+  ('b -> 'a option) ->
+  'a ->
+  unit
+(** [tripping show_a show_b encode decode x] encodes [x] with [encode], then
+    decodes with [decode], and asserts that the round-trip produces [Some x]. On
+    failure, annotates the original, intermediate, and round-trip values. *)
 
 val eval_result : ('e -> string) -> ('a, 'e) result -> 'a
-(** [eval_result show_error r] extracts [Ok x] or fails the property
-    with [show_error e] when [r] is [Error e]. *)
+(** [eval_result show_error r] extracts [Ok x] or fails the property with
+    [show_error e] when [r] is [Error e]. *)
 
 (** {2 Coverage / Classification} *)
 
 val cover : float -> string -> bool -> unit
-(** [cover minimum name condition] requires at least [minimum]% of tests
-    to satisfy [condition] under the given label [name].
-    Example: [cover 30.0 "non-empty" (List.length xs > 0)] *)
+(** [cover minimum name condition] requires at least [minimum]% of tests to
+    satisfy [condition] under the given label [name]. Example:
+    [cover 30.0 "non-empty" (List.length xs > 0)] *)
 
 val classify : string -> bool -> unit
 (** [classify name condition] records the proportion of tests satisfying
@@ -116,11 +118,11 @@ val property : ?config:config -> (unit -> unit) Gen.t -> property
 
     Example:
     {[
-      let prop_reverse =
-        property Gen.(
+    let prop_reverse =
+      property
+        Gen.(
           let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
-          return (fun () ->
-            assert_ (List.rev (List.rev xs) = xs)))
+          return (fun () -> assert_ (List.rev (List.rev xs) = xs)))
     ]} *)
 
 (** {2 Config builders} *)
@@ -146,28 +148,24 @@ val check_report : property -> report
 (** Run a property and return the full report. *)
 
 val format_report : ?color:bool -> report -> string
-(** Format a report as a human-readable string.
-    When [~color:true], ANSI escape codes are included for colored output.
-    Defaults to [false]. *)
+(** Format a report as a human-readable string. When [~color:true], ANSI escape
+    codes are included for colored output. Defaults to [false]. *)
 
 (** {2 Group runner} *)
 
-type group = {
-  name : string;
-  properties : (string * property) list;
-}
+type group = { name : string; properties : (string * property) list }
 
 val check_group : group -> bool
-(** Run a group of properties sequentially. Prints per-property results
-    and a summary line. Returns [true] if all properties passed. *)
+(** Run a group of properties sequentially. Prints per-property results and a
+    summary line. Returns [true] if all properties passed. *)
 
 val check_sequential : group -> bool
 (** Equivalent to {!check_group}. *)
 
 val check_parallel : ?num_domains:int -> group -> bool
-(** Run properties in parallel using a domainslib task pool.
-    [num_domains] defaults to [Domain.recommended_domain_count () - 1].
-    Properties sharing mutable state may interfere with each other. *)
+(** Run properties in parallel using a domainslib task pool. [num_domains]
+    defaults to [Domain.recommended_domain_count () - 1]. Properties sharing
+    mutable state may interfere with each other. *)
 
 (** {2 Recheck} *)
 

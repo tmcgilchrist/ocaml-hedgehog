@@ -23,8 +23,8 @@ val join : 'a t t -> 'a t
 val return : 'a -> 'a t
 
 val fold : ('a -> 'b -> 'c) -> ('c Seq.t -> 'b) -> 'a t -> 'c
-(** [fold f g tree] folds over the tree, applying [f] to each node value
-    and the result of folding the forest, and [g] to fold a forest. *)
+(** [fold f g tree] folds over the tree, applying [f] to each node value and the
+    result of folding the forest, and [g] to fold a forest. *)
 
 val unfold : ('a -> 'b) -> ('a -> 'a Seq.t) -> 'a -> 'b t
 (** [unfold f g x] builds a tree from a value function [f] and a children
@@ -33,31 +33,31 @@ val unfold : ('a -> 'b) -> ('a -> 'a Seq.t) -> 'a -> 'b t
 val unfold_forest : ('a -> 'b) -> ('a -> 'a Seq.t) -> 'a -> 'b t Seq.t
 
 val expand : ('a -> 'a Seq.t) -> 'a t -> 'a t
-(** Add additional shrinks to an existing tree via an unfolding function.
-    The root outcome remains intact; only additional shrinks are appended. *)
+(** Add additional shrinks to an existing tree via an unfolding function. The
+    root outcome remains intact; only additional shrinks are appended. *)
 
 val prune : int -> 'a t -> 'a t
-(** [prune n tree] throws away all but the top [n] levels of children.
-    [prune 0] removes all children. *)
+(** [prune n tree] throws away all but the top [n] levels of children. [prune 0]
+    removes all children. *)
 
 val filter : ('a -> bool) -> 'a t -> 'a t
-(** Recursively discard shrinks whose outcome does not pass the predicate.
-    The root is never discarded. *)
+(** Recursively discard shrinks whose outcome does not pass the predicate. The
+    root is never discarded. *)
 
 val filter_forest : ('a -> bool) -> 'a t Seq.t -> 'a t Seq.t
 
 val map_option : ('a -> 'b option) -> 'a t -> 'b t option
-(** Apply a partial function to a tree. Returns [None] if the root doesn't
-    pass. Children that don't pass are removed, but their sub-children that
-    do pass are retained. *)
+(** Apply a partial function to a tree. Returns [None] if the root doesn't pass.
+    Children that don't pass are removed, but their sub-children that do pass
+    are retained. *)
 
 val mzip : 'a t -> 'b t -> ('a * 'b) t
 (** Zip two trees together for parallel shrinking. Shrinks try each side
     independently. *)
 
 val interleave : 'a t list -> 'a list t
-(** Interleave a list of trees into a tree of lists, with optimal shrinking
-    that tries removing chunks and then shrinking individual elements. *)
+(** Interleave a list of trees into a tree of lists, with optimal shrinking that
+    tries removing chunks and then shrinking individual elements. *)
 
 val cons_child : 'a -> 'a t -> 'a t
 (** [cons_child a tree] prepends a singleton child at the origin [a]. *)

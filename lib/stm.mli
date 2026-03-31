@@ -51,17 +51,24 @@ module type Spec = sig
   (** Execute a command against the real system. *)
 
   val postcond : cmd -> state -> result -> bool
-  (** Check the result of a command against the model state (before the command). *)
+  (** Check the result of a command against the model state (before the
+      command). *)
 end
 
 (** Build a state machine test suite from a specification. *)
 module Make (S : Spec) : sig
-  val sequential : ?config:Property.config -> ?seq_len:int -> unit -> Property.property
+  val sequential :
+    ?config:Property.config -> ?seq_len:int -> unit -> Property.property
   (** Sequential state machine property. Generates command sequences, executes
       them, and checks postconditions at each step. *)
 
-  val parallel : ?config:Property.config -> ?seq_len:int -> ?par_len:int -> unit -> Property.property
-  (** Parallel state machine property. Generates a sequential prefix followed
-      by two concurrent branches, then checks linearizability of the observed
+  val parallel :
+    ?config:Property.config ->
+    ?seq_len:int ->
+    ?par_len:int ->
+    unit ->
+    Property.property
+  (** Parallel state machine property. Generates a sequential prefix followed by
+      two concurrent branches, then checks linearizability of the observed
       results. *)
 end
