@@ -1,7 +1,7 @@
 (** Splittable pseudorandom number generator.
 
-    Wraps OCaml's built-in [Random.State] which uses a splittable LXM
-    algorithm. *)
+    Wraps OCaml's built-in [Random.State] which uses a splittable LXM algorithm.
+*)
 
 type t = Random.State.t
 
