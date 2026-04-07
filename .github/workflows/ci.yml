@@ -21,7 +21,7 @@ jobs:
         run: opam install ocamlformat.0.29.0
 
       - name: Check formatting
-        run: opam exec -- dune fmt -- --check
+        run: opam exec -- dune build @fmt
 
   build:
     runs-on: ubuntu-latest
