@@ -1,12 +1,9 @@
 (** Splittable pseudorandom number generator.
 
-    This is a port of "Fast Splittable Pseudorandom Number Generators" by Steele
-    et al.
+    Wraps OCaml's built-in [Random.State] which uses a splittable LXM
+    algorithm. *)
 
-    The paper's algorithm provides decent randomness for most purposes but
-    sacrifices cryptographic-quality randomness in favor of speed. *)
-
-type t = { value : int64; gamma : int64 }
+type t = Random.State.t
 
 val from : int64 -> t
 (** Create a seed from an [int64] value. *)
@@ -31,10 +28,3 @@ val next_int64_range : int64 -> int64 -> t -> int64 * t
 val next_float : float -> float -> t -> float * t
 (** [next_float lo hi seed] generates a random [float] in the range [\[lo, hi)].
 *)
-
-(** {2 Internal} *)
-
-val golden_gamma : int64
-val mix64 : int64 -> int64
-val mix64variant13 : int64 -> int64
-val mix_gamma : int64 -> int64

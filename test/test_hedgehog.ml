@@ -23,32 +23,36 @@ let test_seed () =
       check "from produces deterministic seed" (fun () ->
           let s1 = Hedgehog.Seed.from 42L in
           let s2 = Hedgehog.Seed.from 42L in
-          s1.value = s2.value && s1.gamma = s2.gamma);
+          let v1, _ = Hedgehog.Seed.next_int64 s1 in
+          let v2, _ = Hedgehog.Seed.next_int64 s2 in
+          v1 = v2);
 
       check "from different inputs produce different seeds" (fun () ->
           let s1 = Hedgehog.Seed.from 42L in
           let s2 = Hedgehog.Seed.from 43L in
-          s1.value <> s2.value);
+          let v1, _ = Hedgehog.Seed.next_int64 s1 in
+          let v2, _ = Hedgehog.Seed.next_int64 s2 in
+          v1 <> v2);
 
       check "split produces two different seeds" (fun () ->
           let s = Hedgehog.Seed.from 42L in
           let s1, s2 = Hedgehog.Seed.split s in
-          s1.value <> s2.value || s1.gamma <> s2.gamma);
+          let v1, _ = Hedgehog.Seed.next_int64 s1 in
+          let v2, _ = Hedgehog.Seed.next_int64 s2 in
+          v1 <> v2);
 
-      check "next_int64 produces value and new seed" (fun () ->
+      check "next_int64 produces a value" (fun () ->
           let s = Hedgehog.Seed.from 42L in
-          let v, s' = Hedgehog.Seed.next_int64 s in
-          v <> 0L && s'.value <> s.value);
+          let v, _ = Hedgehog.Seed.next_int64 s in
+          v <> 0L);
 
       check "next_int in range" (fun () ->
-          let s = Hedgehog.Seed.from 42L in
           let results =
             Array.init 100 (fun i ->
                 let s' = Hedgehog.Seed.from (Int64.of_int (i + 1)) in
                 let v, _ = Hedgehog.Seed.next_int 10 20 s' in
                 v)
           in
-          ignore s;
           Array.for_all (fun v -> v >= 10 && v <= 20) results);
 
       check "next_float in range" (fun () ->
@@ -58,15 +62,7 @@ let test_seed () =
                 let v, _ = Hedgehog.Seed.next_float 1.0 5.0 s in
                 v)
           in
-          Array.for_all (fun v -> v >= 1.0 && v < 5.0) results);
-
-      check "mix64 is deterministic" (fun () ->
-          let a = Hedgehog.Seed.mix64 12345L in
-          let b = Hedgehog.Seed.mix64 12345L in
-          a = b);
-
-      check "golden_gamma is correct" (fun () ->
-          Hedgehog.Seed.golden_gamma = 0x9e3779b97f4a7c15L))
+          Array.for_all (fun v -> v >= 1.0 && v < 5.0) results))
 
 (* ---- Tree tests ---- *)
 let test_tree () =
