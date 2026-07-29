@@ -21,7 +21,7 @@ Generate hundreds of test cases automatically, exposing even the most insidious 
 - Monadic generator composition with `let*` / `let+` / `and+` binding operators.
 - `and+` enables parallel shrinking via `Tree.mzip`.
 - State machine testing with sequential and parallel (linearizability) checking via `Stm`.
-- Zero dependencies beyond OCaml >= 5.0.
+- Small footprint: the OCaml >= 5.1 stdlib plus `domainslib` for parallel checking.
 
 ## Example
 
@@ -189,22 +189,21 @@ dune runtest
 
 ## How It Works
 
-Hedgehog takes a fundamentally different approach from QCheck and Jane
-Street Quickcheck:
+Hedgehog is built on integrated shrinking, the same foundation QCheck2
+adopted in 2021:
 
-- **Integrated shrinking via rose trees** — `Gen.t = int -> Seed.t -> 'a Tree.t option`. Every generator produces a rose tree where the root is the generated value and children are shrunk alternatives. Shrinking is integrated into generation, so it always respects generator invariants (filters, preconditions). No manual shrink functions needed. QCheck and JS Quickcheck both keep generators and shrinkers separate.
-- **Lazy shrink trees** — Shrink children are `Seq.t` (lazy sequences) that can represent infinite shrink strategies without materializing them. JS Quickcheck's `Shrinker.t = 'a -> 'a list` eagerly enumerates all candidates.
+- **Integrated shrinking via rose trees** — `Gen.t = int -> Seed.t -> 'a Tree.t option`. Every generator produces a rose tree where the root is the generated value and children are shrunk alternatives, so shrinking always respects generator invariants (filters, preconditions) and no manual shrink functions are needed. QCheck2 works the same way; QCheck's original API and JS Quickcheck keep generators and shrinkers separate.
 - **Recursive tree binding** — `Gen.bind` recursively binds through the entire shrink tree, matching Haskell Hedgehog's `TreeT` monad semantics. Composed generators (`let*`) automatically compose their shrinking.
 - **Subterm combinators** — `Gen.subterm`, `subterm2`, `subterm3` shrink recursive structures (ASTs, expressions) by trying subterms directly before shrinking within the constructor. Neither QCheck nor JS Quickcheck has an equivalent.
-- **Range-controlled generation** — `Range.t` separates bounds from origin. `Range.linear 0 100` scales with the size parameter and shrinks toward the origin. Golden ratio scaling in `Gen.recursive` naturally controls recursion depth.
-- **Splittable PRNG** — `Seed` wraps OCaml 5's built-in `Random.State` (an LXM generator) behind a functional, immutable interface. Splitting derives independent seeds for sub-generators without threading mutable state, which is what makes parallel shrinking deterministic. Both Hedgehog and JS Quickcheck support seed splitting; Hedgehog's needs nothing beyond the stdlib.
-- **Algebraic effects** — `assert_`, `annotate`, `cover`, `classify` use `Effect.perform`, keeping test logic cleanly separated from generators. JS Quickcheck uses exceptions and integrates with Expect_test instead.
-- **Coverage enforcement** — `cover 50.0 "positive" (n > 0)` fails the property if fewer than 50% of test cases satisfy the condition. Neither QCheck nor JS Quickcheck can enforce minimum coverage thresholds.
-- **State machine testing** — `Stm` supports sequential and parallel (linearizability) checking with `Domain.spawn`. Neither QCheck nor JS Quickcheck has built-in STM support.
+- **Range-controlled generation** — `Range.t` is a reusable value pairing an origin with size-dependent bounds, so `Range.linear 0 100` scales with the size parameter and shrinks toward the origin wherever it is used. QCheck2 has the pieces separately (`Gen.int_range ?origin`, `Gen.sized`) but no combined abstraction. Golden ratio scaling in `Gen.recursive` naturally controls recursion depth.
+- **Algebraic effects** — `assert_`, `annotate`, `cover`, `classify` use `Effect.perform`, keeping test logic cleanly separated from generators. QCheck returns test outcomes as values; JS Quickcheck uses exceptions and integrates with Expect_test.
+- **Coverage enforcement** — `cover 50.0 "positive" (n > 0)` fails the property if fewer than 50% of test cases satisfy the condition. QCheck reports distributions via `?collect` and `?stats` but cannot enforce a threshold; JS Quickcheck has no equivalent.
+- **State machine testing in the library** — `Stm` supports sequential and parallel (linearizability) checking with `Domain.spawn`. QCheck offers this through the separate `qcheck-stm` and `qcheck-lin` packages, which pioneered the approach for OCaml 5.
+- **Parallel property runner** — `Property.check_parallel` runs a group's properties concurrently across domains via `domainslib`. QCheck's runners are sequential.
 - **LCS diff on failure** — `===` and `diff` assertions produce line-level diffs between expected and actual values.
-- **Zero dependencies** — Only requires OCaml >= 5.0 stdlib. JS Quickcheck requires Core, Base, and ppx infrastructure.
+- **Small dependency footprint** — the stdlib plus `domainslib`. `qcheck-core` needs only `unix`; `base_quickcheck` pulls in `base`, `ppxlib` and several `ppx_*` libraries.
 
-JS Quickcheck's main advantage is **ppx derivation** — `[%quickcheck.generator: int list]` automatically derives generators for annotated types. Hedgehog requires writing generators explicitly. JS Quickcheck also supports **function generation** via `Observer.t`, which Hedgehog does not have.
+What Hedgehog lacks: **ppx derivation** (QCheck has `ppx_deriving_qcheck`, JS Quickcheck `[%quickcheck.generator: int list]`) and **function generation** (QCheck's `Observable`/`Fn`, JS Quickcheck's `Observer.t`). Both require writing generators explicitly here.
 
 See the [Alternatives](https://tmcgilchrist.github.io/ocaml-hedgehog/guides/alternatives/) page for a detailed comparison.
 
