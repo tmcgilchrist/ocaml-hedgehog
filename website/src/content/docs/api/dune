@@ -1,0 +1,159 @@
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Gen.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets gen.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Gen\ndescription: Generator combinators\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Property.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets property.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Property\ndescription: Property runner and assertion effects\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Range.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets range.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Range\ndescription: Numeric ranges for generation\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Tree.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets tree.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Tree\ndescription: Rose tree implementation\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Shrink.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets shrink.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Shrink\ndescription: Pure shrinking strategies\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Seed.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets seed.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Seed\ndescription: Splittable PRNG\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Stm.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets stm.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Stm\ndescription: Abstract state machine testing\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/Hedgehog-Diff.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets diff.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Diff\ndescription: Line-level diff algorithm\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))

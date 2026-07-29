@@ -1,0 +1,7 @@
+(documentation
+ (package hedgehog))
+
+(mdx
+ (enabled_if %{bin-available:ocaml-mdx})
+ (files *.mld)
+ (libraries hedgehog))

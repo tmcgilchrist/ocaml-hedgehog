@@ -1,0 +1,53 @@
+{0 Resources}
+
+A curated list of talks, papers, and related projects for understanding
+property-based testing and the ideas behind Hedgehog.
+
+{1 Hedgehog family}
+
+- {{:https://hedgehog.qa}Haskell Hedgehog} — The original implementation
+  by Jacob Stanley. Hedgehog for OCaml follows the same design.
+- {{:https://github.com/hedgehogqa/scala-hedgehog}Scala Hedgehog} — Scala
+  port with similar architecture.
+- {{:https://github.com/hedgehogqa/fsharp-hedgehog}F# Hedgehog} — F#
+  port.
+- {{:https://github.com/hedgehogqa/kotlin-hedgehog}Kotlin Hedgehog} —
+  Kotlin port.
+
+{1 Talks}
+
+- {{:https://www.youtube.com/watch?v=AIv_9T0ab-8}Gens N' Roses: Appetite for Reduction}
+  by Jacob Stanley — Explains why integrated shrinking matters and how
+  rose trees make it work. This is {i the} talk for understanding
+  Hedgehog's design.
+- {{:https://www.youtube.com/watch?v=MIYhFkzGEL0}Choosing properties for property-based testing}
+  by Scott Wlaschin — Practical advice on what properties to test.
+- {{:https://www.youtube.com/watch?v=zi0rHwfiX1Q}Building on Developers' Intuitions}
+  by John Hughes — From the creator of QuickCheck, on making PBT
+  accessible.
+
+{1 Papers}
+
+- {{:https://dl.acm.org/doi/10.1145/351240.351266}QuickCheck: A Lightweight Tool for Random Testing of Haskell Programs}
+  by Koen Claessen and John Hughes (2000) — The original QuickCheck paper.
+- {{:https://proper-testing.github.io/papers/finding-race-conditions.pdf}Finding Race Conditions in Erlang with QuickCheck and PULSE}
+  by Koen Claessen et al. — State machine testing for concurrency.
+- {{:https://dl.acm.org/doi/10.1145/2661136.2661159}Producing Wrong Data Without Doing Anything Obviously Wrong!}
+  by Alex Groce et al. — On the importance of good shrinking.
+
+{1 Books}
+
+- {{:https://propertesting.com}Property-Based Testing with PropEr, Erlang, and Elixir}
+  by Fred Hebert — Excellent practical introduction to PBT concepts,
+  applicable across languages.
+- {{:https://www.manning.com/books/the-joy-of-kotlin}The Joy of Kotlin}
+  by Pierre-Yves Saumont — Includes a chapter on property-based testing.
+
+{1 OCaml ecosystem}
+
+- {{:https://github.com/c-cube/qcheck}QCheck} — The established OCaml
+  PBT library.
+- {{:https://github.com/janestreet/ppx_quickcheck}ppx_quickcheck} — Jane
+  Street's PBT with ppx derivation.
+- {{:https://github.com/ocaml-multicore/dscheck}DSCheck} — Model checking
+  for concurrent OCaml programs.

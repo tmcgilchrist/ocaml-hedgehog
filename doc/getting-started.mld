@@ -1,0 +1,102 @@
+{0 Getting Started}
+
+This guide walks you through installing Hedgehog and writing your first
+property test.
+
+{1 Installation}
+
+Install via opam:
+
+{@bash skip[
+opam install hedgehog
+]}
+
+{1 Project setup}
+
+Add Hedgehog to your [dune-project]:
+
+{@dune[
+(lang dune 3.0)
+
+(package
+ (name my-project)
+ (depends
+  (hedgehog (>= 0.1))))
+]}
+
+And to your test executable's [dune] file:
+
+{@dune[
+(test
+ (name my_tests)
+ (libraries hedgehog))
+]}
+
+{1 Your first property}
+
+Create [test/my_tests.ml]:
+
+{@ocaml[
+open Hedgehog
+
+let prop_reverse_reverse =
+  Property.(property Gen.(
+    let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+    return (fun () ->
+      assert_ (List.rev (List.rev xs) = xs))))
+
+let () =
+  let passed =
+    Property.check_group
+      { name = "my first tests"
+      ; properties =
+          [ "reverse reverse", prop_reverse_reverse
+          ]
+      }
+  in
+  if not passed then exit 1
+]}
+
+{1 Running tests}
+
+{@bash skip[
+dune runtest
+]}
+
+You should see output like:
+
+{v
+━━━ my first tests ━━━
+  ✓ reverse reverse passed 100 tests.
+
+  ✓ 1 succeeded.
+v}
+
+{1 A failing property}
+
+Let's write a property that will fail, to see how Hedgehog reports
+counterexamples with shrinking:
+
+{@ocaml[
+open Hedgehog
+
+let prop_bad_sort =
+  Property.(property Gen.(
+    let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+    return (fun () ->
+      let sorted = List.sort Int.compare xs in
+      assert_ (sorted = xs))))
+
+let () =
+  Property.check prop_bad_sort |> ignore
+]}
+
+Hedgehog will find a minimal counterexample, typically a two-element
+list like [[1; 0]], demonstrating that not all lists are already sorted.
+The integrated shrinking automatically reduces the counterexample without
+any extra work from you.
+
+{1 Next steps}
+
+- {!page-"tutorial"} — Full guide to generators, ranges, assertions, and coverage
+- {!page-"motivation"} — Why Hedgehog's approach to shrinking matters

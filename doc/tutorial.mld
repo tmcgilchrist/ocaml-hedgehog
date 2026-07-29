@@ -1,0 +1,439 @@
+{0 Tutorial}
+
+This guide covers all major features of Hedgehog. We assume you have
+already completed the {!page-"getting-started"} guide.
+
+{1 Properties}
+
+A property is a generator of test closures. The generator builds a
+shrink tree, and the test closure (the [fun () -> ...] part) performs
+assertions using algebraic effects:
+
+{@ocaml[
+open Hedgehog
+
+let prop_addition_commutative =
+  Property.(property Gen.(
+    let* x = int (Range.linear 0 1000) in
+    let* y = int (Range.linear 0 1000) in
+    return (fun () ->
+      assert_ (x + y = y + x))))
+]}
+
+The {!Hedgehog.Property.val-property} function takes a [unit -> unit] generator
+([Gen.t]) and returns a property that can be checked.
+
+{1 Assertions}
+
+Hedgehog provides several assertion functions. All are effects handled
+by the property runner:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  Property.check
+    Property.(property Gen.(
+      let* x = int (Range.linear 0 100) in
+      return (fun () ->
+        (* Boolean assertion *)
+        assert_ (x >= 0);
+        (* Structural equality *)
+        x === x;
+        (* Explicit failure *)
+        if x < 0 then failure ())))
+  |> ignore
+]}
+
+{b [assert_ : bool -> unit]} — Fails the property if the condition is false.
+
+{b [( === ) : 'a -> 'a -> unit]} — Asserts structural equality.
+
+{b [diff : ('a -> string) -> ('a -> 'b -> bool) -> ('b -> string) -> 'a -> 'b -> unit]}
+— Asserts equality with a custom comparator and shows a line-level diff
+on failure.
+
+{b [failure : unit -> 'a]} — Explicitly fails the property.
+
+{1 Logging}
+
+Use [annotate] and [footnote] to add context to failure reports:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  Property.check
+    Property.(property Gen.(
+      let* xs = list (Range.linear 0 50) (int (Range.linear 0 100)) in
+      return (fun () ->
+        annotate (Printf.sprintf "list length: %d" (List.length xs));
+        let sorted = List.sort Int.compare xs in
+        footnote (Printf.sprintf "sorted: [%s]"
+          (String.concat "; " (List.map string_of_int sorted)));
+        assert_ (List.length sorted = List.length xs))))
+  |> ignore
+]}
+
+{b [annotate : string -> unit]} — Shown before the counterexample on failure.
+
+{b [footnote : string -> unit]} — Shown after the counterexample on failure.
+
+{1 Generators}
+
+Generators ({!Hedgehog.Gen.t}) produce random values together with their
+shrink trees. Here are the most commonly used generators:
+
+{2 Numeric generators}
+
+{@ocaml[
+open Hedgehog
+
+let small_int = Gen.int (Range.linear 0 100)            (* int in [0, 100] *)
+let fraction = Gen.float (Range.linear_frac 0.0 1.0)    (* float in [0, 1) *)
+let flag = Gen.bool                                     (* true or false *)
+]}
+
+{2 Characters and strings}
+
+{@ocaml[
+open Hedgehog
+
+let letter = Gen.alpha        (* a-z, A-Z *)
+let alnum = Gen.alpha_num     (* a-z, A-Z, 0-9 *)
+let digit = Gen.digit         (* 0-9 *)
+let any_char = Gen.ascii      (* any ASCII character *)
+
+(* String with length in [0, 20] using alphanumeric chars *)
+let word = Gen.string (Range.linear 0 20) Gen.alpha_num
+]}
+
+{2 Collections}
+
+{@ocaml[
+open Hedgehog
+
+(* List of 0-10 integers *)
+let ints = Gen.list (Range.linear 0 10) (Gen.int (Range.linear 0 100))
+
+(* Non-empty list (always has at least one element) *)
+let some_ints = Gen.non_empty (Range.linear 0 10) (Gen.int (Range.linear 0 100))
+
+(* Optional value *)
+let maybe_int = Gen.option (Gen.int (Range.linear 0 100))
+
+(* Pair *)
+let labelled_int = Gen.pair
+  (Gen.int (Range.linear 0 100))
+  (Gen.string (Range.linear 0 10) Gen.alpha)
+]}
+
+{2 Choice combinators}
+
+{@ocaml[
+open Hedgehog
+
+(* Pick from a fixed list — shrinks towards first element *)
+let colour = Gen.element ["red"; "green"; "blue"]
+
+(* Pick a generator — shrinks towards first generator *)
+let size_label = Gen.choice
+  [ Gen.return "small"
+  ; Gen.string (Range.linear 5 10) Gen.alpha
+  ]
+
+(* Weighted choice *)
+let mostly_small = Gen.frequency
+  [ 3, Gen.int (Range.linear 0 10)
+  ; 1, Gen.int (Range.linear 100 1000)
+  ]
+]}
+
+{1 Ranges}
+
+{!Hedgehog.Range} controls value distribution and shrink direction.
+Every numeric generator takes a range:
+
+{@ocaml[
+open Hedgehog
+
+(* Constant: always generates in [0, 100], regardless of size *)
+let _ = Range.constant 0 100
+
+(* Linear: scales with size. At size 0 generates just the origin (0),
+   at size 99 generates up to 100 *)
+let _ = Range.linear 0 100
+
+(* Exponential: more values near the origin, fewer at the extremes *)
+let _ = Range.exponential 0 10000
+
+(* Custom origin: generates in [-100, 100] but shrinks towards 0 *)
+let _ = Range.linear_from 0 (-100) 100
+]}
+
+The size parameter is an integer from 0 to 99. Hedgehog's runner
+starts with small sizes and gradually increases, so early tests use
+small values and later tests explore larger ones.
+
+{1 Composition}
+
+Hedgehog uses OCaml's binding operator syntax for composing generators:
+
+{@ocaml[
+open Hedgehog
+
+(* let* for sequential composition (bind) *)
+let gen_pair =
+  Gen.(
+    let* x = int (Range.linear 0 100) in
+    let* y = int (Range.linear 0 x) in
+    return (x, y))
+
+(* let+ for mapping *)
+let gen_positive =
+  Gen.(
+    let+ x = int (Range.linear 1 100) in
+    x * 2)
+
+(* and+ for parallel/independent composition *)
+let gen_two_ints =
+  Gen.(
+    let+ x = int (Range.linear 0 100)
+    and+ y = int (Range.linear 0 100) in
+    (x, y))
+]}
+
+Use [let*] when later generators depend on earlier values. Use [and+]
+when generators are independent — this enables parallel shrinking.
+
+{1 Filtering}
+
+Sometimes you need to restrict generated values:
+
+{@ocaml[
+open Hedgehog
+
+(* filter retries with growing size until predicate is satisfied *)
+let gen_even =
+  Gen.filter (fun x -> x mod 2 = 0) (Gen.int (Range.linear 0 100))
+
+(* ensure discards values that don't match *)
+let gen_positive =
+  Gen.ensure (fun x -> x > 0) (Gen.int (Range.linear 0 100))
+]}
+
+{b Warning:} Filtering can be slow if the predicate rejects most values.
+Prefer constructing valid values directly when possible (e.g., generate
+[n] and return [2 * n] for even numbers).
+
+{1 Recursive generators}
+
+For recursive data types, use {!Hedgehog.Gen.recursive}:
+
+{@ocaml[
+open Hedgehog
+
+type expr =
+  | Lit of int
+  | Add of expr * expr
+  | Neg of expr
+
+let gen_expr =
+  Gen.(recursive
+    (fun self ->
+      choice (self @ [let+ n = int (Range.linear 0 100) in Lit n]))
+    [ (let+ n = int (Range.linear 0 100) in Lit n) ]
+    [ (let+ a = choice [] and+ b = choice [] in Add (a, b))
+    ; (let+ a = choice [] in Neg a)
+    ])
+]}
+
+The [recursive] combinator automatically halves the size for recursive
+calls, preventing infinite generation. When size drops to 1 or below,
+only the non-recursive generators are used.
+
+{1 Shrinking}
+
+Shrinking is automatic in Hedgehog. Every generator produces a shrink
+tree, and when a property fails, the runner walks the tree to find the
+smallest counterexample.
+
+You can observe the shrink tree for debugging:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  Gen.(print_tree ~size:5 string_of_int
+    (int (Range.linear 0 100)))
+]}
+
+For advanced use, you can add custom shrinks or disable shrinking entirely:
+
+{@ocaml[
+open Hedgehog
+
+(* Add extra shrinks *)
+let gen_with_extra_shrinks =
+  Gen.shrink (fun n -> [n - 1; n / 2]) (Gen.int (Range.linear 0 100))
+
+(* Disable shrinking entirely *)
+let gen_no_shrink =
+  Gen.(no_shrink (int (Range.linear 0 100)))
+]}
+
+{1 Coverage}
+
+Hedgehog can check that your tests cover important cases:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  Property.check
+    Property.(property Gen.(
+      let* xs = list (Range.linear 0 50) (int (Range.linear 0 100)) in
+      return (fun () ->
+        (* Require at least 20% of tests have empty lists *)
+        cover 20.0 "empty" (List.length xs = 0);
+        (* Require at least 50% of tests have non-empty lists *)
+        cover 50.0 "non-empty" (List.length xs > 0);
+        (* Classify without minimum requirement *)
+        classify "large" (List.length xs > 10);
+        assert_ (List.rev (List.rev xs) = xs))))
+  |> ignore
+]}
+
+{b [cover : float -> string -> bool -> unit]} — Requires at least the
+given percentage of tests to satisfy the condition.
+
+{b [classify : string -> bool -> unit]} — Like [cover] with 0% minimum
+(informational).
+
+{b [label : string -> unit]} — Labels every test (like [classify name true]).
+
+{b [collect : ('a -> string) -> 'a -> unit]} — Labels using the string
+representation of a value.
+
+{1 Round-trip testing}
+
+The {!Hedgehog.Property.tripping} function tests encode/decode round-trips:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  Property.check
+    Property.(property Gen.(
+      let* n = int (Range.linear (-1000) 1000) in
+      return (fun () ->
+        tripping
+          string_of_int          (* show the input *)
+          Fun.id                 (* show the encoded form *)
+          string_of_int          (* encode *)
+          int_of_string_opt      (* decode *)
+          n)))
+  |> ignore
+]}
+
+{1 Deterministic reproduction}
+
+When a property fails, Hedgehog reports the seed and size used. You
+can reproduce the exact failure with {!Hedgehog.Property.val-recheck}:
+
+{@ocaml[
+open Hedgehog
+
+(* Reproduce a failure at a specific size and seed *)
+let _ =
+  Property.recheck 42 (Seed.from 12345L)
+    Property.(property Gen.(
+      let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+      return (fun () ->
+        assert_ (List.length xs < 10))))
+]}
+
+{1 Configuration}
+
+Adjust test parameters per-property:
+
+{@ocaml[
+open Hedgehog
+
+let prop =
+  Property.(property Gen.(
+    let* n = int (Range.linear 0 1000) in
+    return (fun () -> assert_ (n >= 0))))
+
+(* Run 500 tests instead of the default 100 *)
+let _ = Property.with_tests 500 prop
+
+(* Allow up to 5000 shrink steps *)
+let _ = Property.with_shrinks 5000 prop
+
+(* Allow up to 500 discards *)
+let _ = Property.with_discards 500 prop
+]}
+
+{1 Group runner}
+
+Run multiple properties together:
+
+{@ocaml[
+open Hedgehog
+
+let prop_reverse =
+  Property.(property Gen.(
+    let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+    return (fun () ->
+      assert_ (List.rev (List.rev xs) = xs))))
+
+let prop_length =
+  Property.(property Gen.(
+    let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+    return (fun () ->
+      assert_ (List.length (List.rev xs) = List.length xs))))
+
+let () =
+  let passed =
+    Property.check_group
+      { name = "list properties"
+      ; properties =
+          [ "reverse reverse", prop_reverse
+          ; "reverse preserves length", prop_length
+          ]
+      }
+  in
+  if not passed then exit 1
+]}
+
+For parallel execution using domainslib:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  let passed =
+    Property.check_parallel
+      { name = "list properties"
+      ; properties =
+          [ "reverse reverse"
+          , Property.(property Gen.(
+              let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+              return (fun () ->
+                assert_ (List.rev (List.rev xs) = xs))))
+          ; "reverse preserves length"
+          , Property.(property Gen.(
+              let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+              return (fun () ->
+                assert_ (List.length (List.rev xs) = List.length xs))))
+          ]
+      }
+  in
+  if not passed then exit 1
+]}
+
+{1 Next steps}
+
+- {!page-"state-testing"} — Testing stateful systems with Stm
+- {!page-"alternatives"} — How Hedgehog compares to other OCaml PBT libraries

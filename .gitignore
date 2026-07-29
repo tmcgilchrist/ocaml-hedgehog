@@ -5,3 +5,12 @@ setup.ml
 setup.data
 _build/*
 *.install
+
+# Website build artefacts. The site source itself is tracked — CI needs it.
+website/node_modules/
+website/dist/
+website/.astro/
+
+# Markdown generated from doc/*.mld by `make docs`.
+website/src/content/docs/guides/*.md
+website/src/content/docs/api/*.md

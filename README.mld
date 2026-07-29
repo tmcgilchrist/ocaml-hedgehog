@@ -1,0 +1,52 @@
+{0 Hedgehog}
+
+{i Property-based testing with integrated shrinking for OCaml.}
+
+Hedgehog is a property-based testing library in the spirit of
+{{:https://hedgehog.qa}Haskell Hedgehog}. It provides:
+
+- {b Integrated shrinking} — generators produce a rose tree of outcomes,
+  so every generator shrinks for free. No manual shrink functions needed.
+- {b Range-controlled generation} — numeric ranges separate the concept
+  of bounds from the origin, giving you precise control over value
+  distribution and shrink direction.
+- {b Algebraic effects for assertions} — test bodies use OCaml 5
+  effects for [assert_], [annotate], [cover], and more, keeping
+  generator and test logic cleanly separated.
+- {b State machine testing} — the {!Hedgehog.Stm} module lets you test
+  stateful systems against abstract models, with sequential and
+  parallel linearizability checking.
+
+{1 Quick example}
+
+{@ocaml[
+  open Hedgehog
+
+  let () =
+    Property.check
+      Property.(property Gen.(
+        let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+        return (fun () ->
+          assert_ (List.rev (List.rev xs) = xs))))
+    |> ignore
+]}
+
+{1 Guides}
+
+- {!page-"getting-started"} — Installation and first property
+- {!page-"motivation"} — Why integrated shrinking matters
+- {!page-"tutorial"} — Generators, properties, assertions, coverage
+- {!page-"state-testing"} — State machine testing with [Stm]
+- {!page-"alternatives"} — Comparison with QCheck and Jane Street Quickcheck
+- {!page-"resources"} — Talks, papers, and related projects
+
+{1 API reference}
+
+- {!Hedgehog.Gen} — Generator combinators
+- {!Hedgehog.Property} — Property runner and assertion effects
+- {!Hedgehog.Range} — Numeric ranges for generation
+- {!Hedgehog.Tree} — Rose tree implementation
+- {!Hedgehog.Shrink} — Pure shrinking strategies
+- {!Hedgehog.Seed} — Splittable PRNG
+- {!Hedgehog.Stm} — Abstract state machine testing
+- {!Hedgehog.Diff} — Line-level diff algorithm

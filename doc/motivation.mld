@@ -1,0 +1,113 @@
+{0 Motivation}
+
+{i Why does Hedgehog exist when OCaml already has QCheck?}
+
+Hedgehog takes a fundamentally different approach to property-based
+testing. This page explains the design decisions and their consequences.
+
+{1 The shrinking problem}
+
+Traditional property-based testing libraries (QuickCheck, QCheck,
+ScalaCheck) separate generation from shrinking. You write a generator
+to produce random values, and a separate shrink function to make
+failing values smaller:
+
+{v
+(* Traditional approach — generation and shrinking are separate *)
+type 'a gen = Random.t -> 'a
+type 'a shrink = 'a -> 'a list
+v}
+
+This works, but has serious drawbacks:
+
+- {b You must write shrink functions manually.} For complex types this
+  is tedious and error-prone. Forget a shrink function and you get
+  enormous counterexamples.
+- {b Shrinking can produce invalid values.} If your generator only
+  produces sorted lists, naive shrinking might produce unsorted ones,
+  causing spurious failures.
+- {b Composed generators lose shrinking.} When you [bind] two
+  generators, the shrink functions don't automatically compose.
+  The shrunk values from the first generator aren't fed through
+  the second.
+
+{1 Integrated shrinking}
+
+Hedgehog solves this by {b integrating shrinking into generation}.
+A generator doesn't just produce a value — it produces a {i rose tree}
+of values, where the root is the generated value and the children
+are progressively simpler alternatives:
+
+{v
+type 'a tree = Node of 'a * 'a tree Seq.t
+type 'a gen = int -> Seed.t -> 'a tree option
+v}
+
+When a property fails, Hedgehog walks down the tree, trying simpler
+values until it finds the smallest one that still fails. This means:
+
+- {b Every generator shrinks automatically.} No manual shrink functions.
+- {b Shrinking respects generator invariants.} A filtered generator's
+  shrink tree only contains values that pass the filter.
+- {b Composition preserves shrinking.} When you [bind] two generators,
+  the resulting shrink tree interleaves shrinks from both.
+
+{1 Range-controlled generation}
+
+Most property-based testing libraries couple value range to the size
+parameter in an opaque way. Hedgehog makes this explicit with
+{!Hedgehog.Range}:
+
+{@ocaml[
+open Hedgehog
+
+(* A range from 0 to 100, shrinking towards 0 *)
+let _ = Range.linear 0 100
+
+(* A range from -50 to 50, shrinking towards 0 *)
+let _ = Range.linear_from 0 (-50) 50
+
+(* Exponential growth — more small values, fewer large ones *)
+let _ = Range.exponential 0 1000
+]}
+
+Ranges encode three concepts:
+- {b Origin} — the value to shrink towards
+- {b Bounds} — the limits of generation, potentially size-dependent
+- {b Scaling} — how bounds grow with the size parameter (constant,
+  linear, or exponential)
+
+This makes it easy to control value distribution and shrink direction
+independently.
+
+{1 Effects-based assertions}
+
+OCaml 5's algebraic effects provide a clean way to express test
+assertions without threading state:
+
+{@ocaml[
+open Hedgehog
+
+let () =
+  Property.check
+    Property.(property Gen.(
+      let* x = int (Range.linear 1 100) in
+      let* y = int (Range.linear 1 100) in
+      return (fun () ->
+        annotate (Printf.sprintf "x = %d, y = %d" x y);
+        assert_ (x + y > 0))))
+  |> ignore
+]}
+
+The [annotate], [assert_], [cover], and other operations are effects
+handled by the property runner. This keeps the generator (which builds
+the shrink tree) cleanly separated from the test body (which performs
+effects).
+
+{1 Further reading}
+
+- {{:https://www.youtube.com/watch?v=AIv_9T0ab-8}Gens N' Roses} — Jacob
+  Stanley's talk on the design of Haskell Hedgehog
+- {!page-"tutorial"} — Hands-on guide to using Hedgehog
+- {!page-"alternatives"} — Detailed comparison with QCheck and Jane Street
+  Quickcheck

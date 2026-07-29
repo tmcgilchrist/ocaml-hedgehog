@@ -1,0 +1,257 @@
+{0 Alternatives}
+
+An overview of property-based testing libraries available for OCaml
+and how Hedgehog compares.
+
+{1 QCheck}
+
+{{:https://github.com/c-cube/qcheck}QCheck} is the most established
+property-based testing library for OCaml, with a large ecosystem and
+integrations with Alcotest and OUnit.
+
+{b Approach:} Traditional QuickCheck model — generators and shrink
+functions are separate. You write [QCheck.Gen.t] for generation and
+[QCheck.Shrink.t] for shrinking.
+
+{b Strengths:}
+- Mature, battle-tested, widely adopted
+- Rich combinator library
+- Alcotest and OUnit integration out of the box
+- Works with all OCaml versions (no OCaml 5 dependency)
+
+{b Tradeoffs:}
+- Manual shrink functions required for good shrinking on custom types
+- Shrinking can produce values outside the generator's domain
+- Composed generators don't automatically compose shrinking
+
+{1 Jane Street Quickcheck}
+
+{{:https://github.com/janestreet/ppx_quickcheck}ppx_quickcheck} is
+part of the Jane Street ecosystem and integrates with Core.
+
+{b Approach:} Uses a "Quickcheckable" type class pattern. Generators
+and observers are derived via ppx for types annotated with
+[[@@deriving quickcheck]].
+
+{b Strengths:}
+- Automatic generator derivation via ppx
+- Deeply integrated with Core and Expect tests
+- Supports both generation and observation (for function generation)
+
+{b Tradeoffs:}
+- Tightly coupled to the Jane Street ecosystem (Core, ppx_jane)
+- Separate generation and shrinking model
+- Less accessible if you don't already use Jane Street libraries
+
+{2 Key differences from Hedgehog}
+
+{3 Separate generators and shrinkers}
+
+Jane Street Quickcheck keeps [Generator.t] and [Shrinker.t] as
+separate types. Shrinkers have type ['a -> 'a list] — they eagerly
+enumerate all candidate shrinks as a list. Hedgehog's rose tree
+approach ([Tree.t] with lazy [Seq.t] children) means shrinking is
+integrated into generation: composed generators ([let*]) automatically
+compose their shrinking. In Quickcheck, you must ensure shrinkers are
+properly derived for composite types, typically via ppx.
+
+{3 PPX derivation}
+
+Quickcheck's strongest feature is [[%quickcheck.generator: int list]]
+— automatic generator derivation via ppx for any type annotated with
+[[\@\@deriving quickcheck]]. Hedgehog has no ppx support; all
+generators are written explicitly. This is more boilerplate but fully
+transparent — you always know exactly what your generator does.
+
+{3 Eager vs lazy shrinking}
+
+Quickcheck's [Shrinker.t = 'a -> 'a list] eagerly enumerates all
+shrink candidates. Hedgehog's [Tree.t] children are [Seq.t] — lazy
+sequences that can represent infinite shrink strategies (e.g.
+[Shrink.towards] for integers) without materialising them. This makes
+Hedgehog more memory-efficient for deep shrink trees.
+
+{3 Observers for function generation}
+
+Quickcheck provides [Observer.t] for generating random {e functions}
+— a feature Hedgehog does not have. Observers allow you to test
+higher-order properties like [List.map f (List.map g xs) =
+List.map (fun x -> f (g x)) xs] with randomly generated [f] and [g].
+
+{3 Core ecosystem dependency}
+
+Quickcheck requires Base, Core, Core_kernel, and ppx infrastructure.
+Hedgehog depends only on OCaml >= 5.0 stdlib — zero external
+dependencies. This makes Hedgehog easier to adopt in projects that
+don't already use the Jane Street ecosystem.
+
+{3 Expect_test integration vs algebraic effects}
+
+Quickcheck integrates deeply with [Expect_test] — test output is
+compared against expected output inline in source files. Hedgehog uses
+OCaml 5 algebraic effects for assertions, annotations, and coverage
+tracking. The effects-based approach allows collecting rich
+counterexample context ([annotate], [cover], [classify]) alongside
+failures without exception handling.
+
+{3 No state machine testing}
+
+Quickcheck is purely a generator/shrinker library with no built-in
+state machine testing. Hedgehog's {!Hedgehog.Stm} module provides
+both sequential and parallel linearizability checking out of the box.
+
+{3 Subterm combinators}
+
+Hedgehog provides [Gen.subterm], [subterm2], and [subterm3] for
+recursive data structures. When shrinking [f x y], these try [x] and
+[y] directly as candidates before trying [f x' y] or [f x y'].
+This dramatically speeds up shrinking for ASTs and recursive
+structures. Quickcheck has no equivalent — you must manually arrange
+your shrinker to try subterms first.
+
+{3 Golden ratio size scaling}
+
+Hedgehog's [Gen.recursive] reduces the size parameter by the golden
+ratio (0.618) at each recursion level to naturally control depth.
+Quickcheck threads a size parameter but does not have this specific
+mathematical scaling strategy.
+
+{1 Hedgehog}
+
+{b Approach:} Integrated shrinking via rose trees. Generators produce
+{!Hedgehog.Tree.t} values where the root is the generated value and
+children are shrunk alternatives.
+
+{b Strengths:}
+- Every generator shrinks automatically — no manual shrink functions
+- Shrinking respects generator invariants (filters, preconditions)
+- Range-controlled generation with explicit origins and scaling
+- Algebraic effects for clean assertion/logging API (OCaml 5)
+- Built-in state machine testing ({!Hedgehog.Stm})
+- Parallel property checking via domainslib
+
+{b Tradeoffs:}
+- Requires OCaml 5.1+ (algebraic effects)
+- Smaller ecosystem than QCheck
+- No ppx derivation for generators (yet)
+- Rose tree overhead for simple cases where shrinking isn't needed
+
+{2 Key differences in depth}
+
+{3 Integrated shrinking via rose trees}
+
+The core type is [Gen.t = int -> Seed.t -> 'a Tree.t option]. Every
+generator produces a rose tree where the root is the generated value
+and children are shrunk alternatives. In QCheck, generators and shrink
+functions are separate — you write [QCheck.Gen.t] for generation and
+[QCheck.Shrink.t] for shrinking. This separation means shrinking can
+produce values that violate generator invariants (e.g. a filtered
+generator might shrink to a value that doesn't pass the filter).
+
+{3 Recursive tree binding}
+
+[Gen.bind] recursively binds through the {e entire} shrink tree, not
+just the root value. This matches the semantics of Haskell Hedgehog's
+[TreeT] monad: when you compose generators with [let*], shrinking
+the first generator automatically re-runs the second generator on
+each shrunk alternative. QCheck's separate model has no equivalent —
+composed generators lose shrinking information.
+
+{3 Tree.interleave for list shrinking}
+
+List shrinking uses a sophisticated interleaving algorithm that
+combines multiple strategies: removing elements (halving, then
+individual removal), shrinking individual elements in place, and
+shrinking pairs of elements simultaneously. The entire process uses
+lazy [Seq.t] sequences to avoid materialising the (potentially
+infinite) shrink tree. QCheck's list shrinking is comparatively
+simple.
+
+{3 Range-controlled generation}
+
+[Range.t] separates bounds from origin, giving control over both
+value distribution and shrink direction. [Range.linear 0 100]
+generates values scaled by the size parameter and always shrinks
+toward the origin (0). QCheck uses flat uniform distributions with
+no built-in notion of size scaling or shrink targets.
+
+{3 Splittable PRNG}
+
+{!Hedgehog.Seed} wraps OCaml 5's [Random.State] — a splittable LXM
+generator — behind an immutable interface, copying the state before
+each operation. Splitting derives independent seeds for sub-generators
+without threading mutable state, which is essential for deterministic
+parallel shrinking. QCheck threads a single mutable [Random.State.t]
+through generation rather than splitting it, so sub-generators cannot
+be evaluated independently.
+
+{3 Algebraic effects for assertions}
+
+[Property.assert_], [annotate], [cover], [classify] and [collect] all
+use [Effect.perform] under the hood. This keeps test logic cleanly
+separated from generators — you write
+[return (fun () -> assert_ ...; annotate ...)] rather than threading
+assertion results through the generator monad. QCheck has no
+equivalent; test outcomes are returned as values.
+
+{3 Coverage checking}
+
+Properties can require minimum coverage of labelled categories:
+[cover 50.0 "positive" (n > 0)] fails the property if
+fewer than 50% of test cases satisfy the condition. Coverage is
+implemented via effect-based log accumulation in the property runner.
+QCheck provides [collect] for reporting distributions but cannot
+enforce minimum thresholds.
+
+{3 State machine testing}
+
+The {!Hedgehog.Stm} module supports both sequential and parallel
+(linearizability) testing. Parallel testing generates command
+sequences, runs them concurrently with [Domain.spawn], then checks
+whether the observed results match {e some} sequential interleaving
+of the model. QCheck has no built-in state machine testing.
+
+{3 LCS-based diff for counterexamples}
+
+When [===] or [diff] assertions fail, a line-level LCS diff algorithm
+produces readable output showing exactly what changed between expected
+and actual values. QCheck prints the counterexample value but does not
+compute diffs.
+
+{3 Pure shrink strategies}
+
+[Shrink.towards], [Shrink.halves], and [Shrink.removes] are
+composable building blocks that produce lazy sequences of shrunk
+alternatives. These integrate directly with the rose tree structure so
+that all generators shrink for free. In QCheck, equivalent strategies
+must be manually composed into [Shrink.t] values and attached to each
+generator.
+
+{1 Feature comparison}
+
+{table
+  {tr {th Feature} {th QCheck} {th JS Quickcheck} {th Hedgehog}}
+  {tr {td Integrated shrinking} {td No} {td No} {td Yes}}
+  {tr {td Lazy shrink trees} {td No} {td No (eager lists)} {td Yes (Seq.t)}}
+  {tr {td Range-controlled gen} {td No} {td No} {td Yes}}
+  {tr {td PPX derivation} {td No} {td Yes} {td No}}
+  {tr {td Function generation} {td No} {td Yes (Observer.t)} {td No}}
+  {tr {td Subterm combinators} {td No} {td No} {td Yes}}
+  {tr {td State machine testing} {td No} {td No} {td Yes}}
+  {tr {td Parallel testing} {td No} {td No} {td Yes}}
+  {tr {td Coverage enforcement} {td No} {td No} {td Yes}}
+  {tr {td Effects-based API} {td No} {td No} {td Yes}}
+  {tr {td Diff on failure} {td No} {td Via Expect_test} {td Yes (LCS)}}
+  {tr {td OCaml < 5 support} {td Yes} {td Yes} {td No}}
+  {tr {td External dependencies} {td None} {td Core/Base/ppx} {td None}}
+  {tr {td Alcotest integration} {td Built-in} {td No} {td Separate package}}
+}
+
+{1 Choosing a library}
+
+- {b Use QCheck} if you need broad compatibility, don't use OCaml 5 yet,
+  or want the largest ecosystem and community.
+- {b Use Jane Street Quickcheck} if you are already in the Jane Street
+  ecosystem and want ppx-derived generators.
+- {b Use Hedgehog} if you want the best shrinking, need state machine
+  testing, or prefer the effects-based API.

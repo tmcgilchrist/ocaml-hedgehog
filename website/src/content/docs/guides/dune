@@ -1,0 +1,119 @@
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/getting-started.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets getting-started.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Getting Started\ndescription: Installation and first property\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/motivation.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets motivation.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Motivation\ndescription: Why integrated shrinking matters\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/tutorial.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets tutorial.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Tutorial\ndescription: Generators, properties, assertions, coverage\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/state-testing.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets state-testing.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: State Testing\ndescription: State machine testing with Stm\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/alternatives.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets alternatives.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Alternatives\ndescription: Comparison with QCheck and Jane Street Quickcheck\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))
+
+(rule
+ (alias generate-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (mode
+  (promote (until-clean)))
+ (deps
+  (:src %{workspace_root}/_doc/_markdown/hedgehog/resources.md)
+  (:script %{workspace_root}/website/fix-odoc-md.sh))
+ (targets resources.md)
+ (action
+  (progn
+   (with-stdout-to
+    %{targets}
+    (progn
+     (echo
+      "---\ntitle: Resources\ndescription: Talks, papers, and related projects\ndraft: false\nhead: []\n---\n\n")
+     (cat %{src})))
+   (run bash %{script} %{targets}))))

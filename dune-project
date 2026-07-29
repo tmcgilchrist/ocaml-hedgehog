@@ -1,4 +1,5 @@
-(lang dune 3.0)
+(lang dune 3.2)
+(using mdx 0.2)
 (name hedgehog)
 
 (generate_opam_files true)
@@ -14,7 +15,10 @@
  (description "Hedgehog is a property-based testing library with integrated shrinking, using OCaml 5 effects for assertions and logging.")
  (depends
   (ocaml (>= 5.1))
-  (domainslib (>= 0.5))))
+  (domainslib (>= 0.5))
+  (ocamlformat (and (= 0.29.0) :with-dev-setup))
+  (odoc (and (>= 3.2.1) :with-doc))
+  (mdx :with-test)))
 
 (package
  (name hedgehog-alcotest)

@@ -1,0 +1,232 @@
+{0 State Testing}
+
+Hedgehog includes a state machine testing module ({!Hedgehog.Stm}) for
+testing stateful systems against an abstract model. This approach can
+find subtle bugs, especially concurrency issues, that are hard to catch
+with simple property tests.
+
+{1 The idea}
+
+State machine testing works by:
+
++ Defining an abstract {b model} of the system's expected behavior
++ Generating random {b command sequences}
++ Executing commands against both the real system and the model
++ Checking that the real system's behavior matches the model at every step
+
+{1 Defining a specification}
+
+You implement the {!Hedgehog.Stm.Spec} module type. Here's a complete
+example testing a mutable counter:
+
+{@ocaml[
+open Hedgehog
+
+(* The system under test: a simple mutable counter *)
+module Counter = struct
+  type t = { mutable value : int }
+  let create () = { value = 0 }
+  let get c = c.value
+  let incr c = c.value <- c.value + 1
+  let decr c = c.value <- c.value - 1
+  let reset c = c.value <- 0
+end
+
+module Counter_spec = struct
+  type cmd = Get | Incr | Decr | Reset
+  type state = int
+  type sut = Counter.t
+  type result = Int of int | Unit
+
+  let show_cmd = function
+    | Get -> "get"
+    | Incr -> "incr"
+    | Decr -> "decr"
+    | Reset -> "reset"
+
+  let show_result = function
+    | Int n -> string_of_int n
+    | Unit -> "()"
+
+  let gen_cmd _state =
+    Gen.element [Get; Incr; Decr; Reset]
+
+  let shrink_cmd _cmd = Seq.empty
+
+  let init_state = 0
+  let init_sut () = Counter.create ()
+  let cleanup _sut = ()
+
+  let next_state cmd state =
+    match cmd with
+    | Get -> state
+    | Incr -> state + 1
+    | Decr -> state - 1
+    | Reset -> 0
+
+  let precond _state _cmd = true
+
+  let run cmd sut =
+    match cmd with
+    | Get -> Int (Counter.get sut)
+    | Incr -> Counter.incr sut; Unit
+    | Decr -> Counter.decr sut; Unit
+    | Reset -> Counter.reset sut; Unit
+
+  let postcond cmd state result =
+    match cmd, result with
+    | Get, Int n -> n = state
+    | Get, _ -> false
+    | _, Unit -> true
+    | _, _ -> false
+end
+
+module Counter_test = Stm.Make(Counter_spec)
+]}
+
+{1 Running sequential tests}
+
+{@ocaml[
+open Hedgehog
+
+module Counter = struct
+  type t = { mutable value : int }
+  let create () = { value = 0 }
+  let get c = c.value
+  let incr c = c.value <- c.value + 1
+  let decr c = c.value <- c.value - 1
+  let reset c = c.value <- 0
+end
+
+module Counter_spec = struct
+  type cmd = Get | Incr | Decr | Reset
+  type state = int
+  type sut = Counter.t
+  type result = Int of int | Unit
+  let show_cmd = function
+    | Get -> "get" | Incr -> "incr" | Decr -> "decr" | Reset -> "reset"
+  let show_result = function
+    | Int n -> string_of_int n | Unit -> "()"
+  let gen_cmd _state = Gen.element [Get; Incr; Decr; Reset]
+  let shrink_cmd _cmd = Seq.empty
+  let init_state = 0
+  let init_sut () = Counter.create ()
+  let cleanup _sut = ()
+  let next_state cmd state =
+    match cmd with
+    | Get -> state | Incr -> state + 1 | Decr -> state - 1 | Reset -> 0
+  let precond _state _cmd = true
+  let run cmd sut =
+    match cmd with
+    | Get -> Int (Counter.get sut) | Incr -> Counter.incr sut; Unit
+    | Decr -> Counter.decr sut; Unit | Reset -> Counter.reset sut; Unit
+  let postcond cmd state result =
+    match cmd, result with
+    | Get, Int n -> n = state | Get, _ -> false | _, Unit -> true | _, _ -> false
+end
+
+module Counter_test = Stm.Make(Counter_spec)
+
+let () =
+  let prop = Counter_test.sequential () in
+  Property.check prop |> ignore
+]}
+
+The sequential test generates random command sequences, executes them
+one at a time, and checks postconditions after each step. If a
+postcondition fails, the sequence is shrunk to find the minimal
+failing prefix.
+
+{1 Parallel testing}
+
+Parallel testing detects concurrency bugs by running commands
+concurrently and checking that the results are {i linearizable} —
+that there exists some sequential ordering of the commands that
+explains the observed results:
+
+{@ocaml[
+open Hedgehog
+
+module Counter = struct
+  type t = { mutable value : int }
+  let create () = { value = 0 }
+  let get c = c.value
+  let incr c = c.value <- c.value + 1
+  let decr c = c.value <- c.value - 1
+  let reset c = c.value <- 0
+end
+
+module Counter_spec = struct
+  type cmd = Get | Incr | Decr | Reset
+  type state = int
+  type sut = Counter.t
+  type result = Int of int | Unit
+  let show_cmd = function
+    | Get -> "get" | Incr -> "incr" | Decr -> "decr" | Reset -> "reset"
+  let show_result = function
+    | Int n -> string_of_int n | Unit -> "()"
+  let gen_cmd _state = Gen.element [Get; Incr; Decr; Reset]
+  let shrink_cmd _cmd = Seq.empty
+  let init_state = 0
+  let init_sut () = Counter.create ()
+  let cleanup _sut = ()
+  let next_state cmd state =
+    match cmd with
+    | Get -> state | Incr -> state + 1 | Decr -> state - 1 | Reset -> 0
+  let precond _state _cmd = true
+  let run cmd sut =
+    match cmd with
+    | Get -> Int (Counter.get sut) | Incr -> Counter.incr sut; Unit
+    | Decr -> Counter.decr sut; Unit | Reset -> Counter.reset sut; Unit
+  let postcond cmd state result =
+    match cmd, result with
+    | Get, Int n -> n = state | Get, _ -> false | _, Unit -> true | _, _ -> false
+end
+
+module Counter_test = Stm.Make(Counter_spec)
+
+let () =
+  let prop = Counter_test.parallel () in
+  Property.check prop |> ignore
+]}
+
+For the simple counter above, parallel testing would likely find a bug
+since the [incr] and [decr] operations are not atomic. In a real
+application, you'd use locks or atomic operations and verify the
+implementation is correct.
+
+{1 Specification reference}
+
+The {!Hedgehog.Stm.Spec} module type requires:
+
+{table
+  {tr {th Field} {th Type} {th Description}}
+  {tr {td [cmd]} {td type} {td Command variant type}}
+  {tr {td [state]} {td type} {td Abstract model state}}
+  {tr {td [sut]} {td type} {td System under test type}}
+  {tr {td [result]} {td type} {td Command result type}}
+  {tr {td [show_cmd]} {td [cmd -> string]} {td Pretty-print commands}}
+  {tr {td [show_result]} {td [result -> string]} {td Pretty-print results}}
+  {tr {td [gen_cmd]} {td [state -> cmd Gen.t]} {td Generate commands given current state}}
+  {tr {td [shrink_cmd]} {td [cmd -> cmd Seq.t]} {td Shrink commands}}
+  {tr {td [init_state]} {td [state]} {td Initial model state}}
+  {tr {td [init_sut]} {td [unit -> sut]} {td Create fresh system under test}}
+  {tr {td [cleanup]} {td [sut -> unit]} {td Tear down the system}}
+  {tr {td [next_state]} {td [cmd -> state -> state]} {td Model state transition}}
+  {tr {td [precond]} {td [state -> cmd -> bool]} {td Is command valid in state?}}
+  {tr {td [run]} {td [cmd -> sut -> result]} {td Execute command on real system}}
+  {tr {td [postcond]} {td [cmd -> state -> result -> bool]} {td Check result against model}}
+}
+
+{1 Tips}
+
+- {b Generate commands based on state.} Use [gen_cmd]'s state parameter
+  to only generate valid commands. For example, don't generate "pop" on
+  an empty stack.
+- {b Use [precond] as a safety net.} Even with state-aware generation,
+  shrinking might produce invalid sequences. [precond] filters these out.
+- {b Keep the model simple.} The model should be obviously correct. Use
+  simple data structures (lists, maps) even if the real system uses
+  something more complex.
+- {b Parallel testing is non-deterministic.} Run parallel tests multiple
+  times or with more test cases to increase confidence.

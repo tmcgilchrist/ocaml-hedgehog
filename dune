@@ -1,0 +1,15 @@
+(documentation
+ (package hedgehog)
+ (mld_files README))
+
+(mdx
+ (enabled_if %{bin-available:ocaml-mdx})
+ (files README.mld)
+ (libraries hedgehog))
+
+(alias
+ (name doc-markdown)
+ (enabled_if
+  (= %{env:GENERATE_MARKDOWN=false} "true"))
+ (deps
+  (alias_rec generate-markdown)))

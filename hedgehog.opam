@@ -9,10 +9,12 @@ license: "BSD-3-Clause"
 homepage: "https://github.com/tmcgilchrist/ocaml-hedgehog"
 bug-reports: "https://github.com/tmcgilchrist/ocaml-hedgehog/issues"
 depends: [
-  "dune" {>= "3.0"}
+  "dune" {>= "3.2"}
   "ocaml" {>= "5.1"}
   "domainslib" {>= "0.5"}
-  "odoc" {with-doc}
+  "ocamlformat" {= "0.29.0" & with-dev-setup}
+  "odoc" {>= "3.2.1" & with-doc}
+  "mdx" {with-test}
 ]
 build: [
   ["dune" "subst"] {dev}
