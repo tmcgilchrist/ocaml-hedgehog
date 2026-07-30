@@ -15,12 +15,21 @@ type config = {
   verbosity : verbosity;
 }
 
+(* Verbosity is detected from the environment, as in Haskell Hedgehog:
+   HEDGEHOG_VERBOSITY=0 selects Quiet, 1 selects Normal, anything else (or an
+   unset variable) leaves the default of Normal. *)
+let detect_verbosity () =
+  match Sys.getenv_opt "HEDGEHOG_VERBOSITY" with
+  | Some "0" -> Quiet
+  | Some "1" -> Normal
+  | Some _ | None -> Normal
+
 let default_config =
   {
     test_limit = 100;
     discard_limit = 100;
     shrink_limit = 1000;
-    verbosity = Quiet;
+    verbosity = detect_verbosity ();
   }
 
 (* -- ANSI color helpers -- *)
@@ -63,6 +72,7 @@ type label_info = { name : string; minimum : float; count : int }
 type report = {
   tests : int;
   discards : int;
+  shrinks : int;
   status : status;
   coverage : label_info list;
   seed : Seed.t;
@@ -140,6 +150,33 @@ let with_tests n = map_config (fun c -> { c with test_limit = n })
 let with_shrinks n = map_config (fun c -> { c with shrink_limit = n })
 let with_discards n = map_config (fun c -> { c with discard_limit = n })
 let with_verbose = map_config (fun c -> { c with verbosity = Normal })
+let with_quiet = map_config (fun c -> { c with verbosity = Quiet })
+
+(* -- Count rendering, following Haskell Hedgehog's Report module -- *)
+
+let pp_test_count = function 1 -> "1 test" | n -> Printf.sprintf "%d tests" n
+
+let pp_discard_count = function
+  | 1 -> "1 discard"
+  | n -> Printf.sprintf "%d discards" n
+
+let pp_shrink_count = function
+  | 1 -> "1 shrink"
+  | n -> Printf.sprintf "%d shrinks" n
+
+(* Omitted entirely when nothing was discarded. *)
+let pp_with_discard_count = function
+  | 0 -> ""
+  | n -> " with " ^ pp_discard_count n
+
+(* Trailing clause for a failure: neither, either, or both counts. *)
+let pp_shrink_discard shrinks discards =
+  match (shrinks, discards) with
+  | 0, 0 -> ""
+  | 0, d -> " and " ^ pp_discard_count d
+  | s, 0 -> " and " ^ pp_shrink_count s
+  | s, d ->
+      Printf.sprintf ", %s and %s" (pp_shrink_count s) (pp_discard_count d)
 
 (* -- Effect handler: run a test closure and capture result -- *)
 
@@ -181,9 +218,7 @@ let take_smallest verbosity shrink_limit tree =
   let shrinks_performed = ref 0 in
   let print_shrink () =
     match verbosity with
-    | Normal ->
-        Printf.eprintf "\r  ↓ %d shrink%s%!" !shrinks_performed
-          (if !shrinks_performed = 1 then "" else "s")
+    | Normal -> Printf.eprintf "\r  ↓ %s%!" (pp_shrink_count !shrinks_performed)
     | Quiet -> ()
   in
   let rec go (Tree.Node (test_fn, children)) =
@@ -218,7 +253,9 @@ let take_smallest verbosity shrink_limit tree =
         ignore !found_smaller;
         Some !result
   in
-  go tree
+  match go tree with
+  | None -> None
+  | Some (fail, log) -> Some (fail, log, !shrinks_performed)
 
 (* -- Coverage accumulation -- *)
 
@@ -275,10 +312,8 @@ let check_report prop =
   let print_progress tests discards =
     match config.verbosity with
     | Normal ->
-        if discards > 0 then
-          Printf.eprintf "\r  %d / %d tests, %d discards%!" tests
-            config.test_limit discards
-        else Printf.eprintf "\r  %d / %d tests%!" tests config.test_limit
+        Printf.eprintf "\r  %d / %d tests%s%!" tests config.test_limit
+          (pp_with_discard_count discards)
     | Quiet -> ()
   in
   let clear_progress () =
@@ -302,6 +337,7 @@ let check_report prop =
         {
           tests;
           discards;
+          shrinks = 0;
           status =
             Failed
               {
@@ -319,11 +355,21 @@ let check_report prop =
           seed = initial_seed;
           size;
         }
-      else { tests; discards; status = OK; coverage; seed = initial_seed; size }
+      else
+        {
+          tests;
+          discards;
+          shrinks = 0;
+          status = OK;
+          coverage;
+          seed = initial_seed;
+          size;
+        }
     else if discards >= config.discard_limit then
       {
         tests;
         discards;
+        shrinks = 0;
         status = GaveUp;
         coverage = coverage_to_list cov;
         seed = initial_seed;
@@ -343,17 +389,18 @@ let check_report prop =
                 (merge_coverage cov test_cov)
           | TestFailed (fail, log) ->
               clear_progress ();
-              let final_fail, final_log =
+              let final_fail, final_log, shrinks =
                 match
                   take_smallest config.verbosity config.shrink_limit tree
                 with
-                | Some (f, l) -> (f, l)
-                | None -> (fail, log)
+                | Some (f, l, n) -> (f, l, n)
+                | None -> (fail, log, 0)
               in
               clear_progress ();
               {
                 tests = tests + 1;
                 discards;
+                shrinks;
                 status = Failed { failure = final_fail; log = final_log };
                 coverage = coverage_to_list cov;
                 seed = initial_seed;
@@ -397,20 +444,26 @@ let format_report ?(color = false) report =
   let buf = Buffer.create 256 in
   (match report.status with
   | OK ->
-      let line = Printf.sprintf "+++ OK, passed %d tests.\n" report.tests in
+      let line =
+        Printf.sprintf "+++ OK, passed %s%s.\n"
+          (pp_test_count report.tests)
+          (pp_with_discard_count report.discards)
+      in
       Buffer.add_string buf (if color then with_color ansi_green line else line);
       format_coverage ~color buf report.tests report.coverage
   | GaveUp ->
       let line =
-        Printf.sprintf "*** Gave up after %d discards, passed %d tests.\n"
-          report.discards report.tests
+        Printf.sprintf "*** Gave up after %s, passed %s.\n"
+          (pp_discard_count report.discards)
+          (pp_test_count report.tests)
       in
       Buffer.add_string buf
         (if color then with_color ansi_yellow line else line)
   | Failed { failure; log } ->
       let line =
-        Printf.sprintf "*** Failed! Falsifiable (after %d tests):\n"
-          report.tests
+        Printf.sprintf "*** Failed! Falsifiable (after %s%s):\n"
+          (pp_test_count report.tests)
+          (pp_shrink_discard report.shrinks report.discards)
       in
       Buffer.add_string buf (if color then with_color ansi_red line else line);
       List.iter
@@ -446,14 +499,19 @@ let print_property_result ~color name report =
   match report.status with
   | OK ->
       let mark = if color then with_color ansi_green "✓" else "✓" in
-      Printf.printf "  %s %s passed %d tests.\n" mark name report.tests
+      Printf.printf "  %s %s passed %s%s.\n" mark name
+        (pp_test_count report.tests)
+        (pp_with_discard_count report.discards)
   | GaveUp ->
       let mark = if color then with_color ansi_yellow "⚐" else "⚐" in
-      Printf.printf "  %s %s gave up after %d discards, only %d tests.\n" mark
-        name report.discards report.tests
+      Printf.printf "  %s %s gave up after %s, passed %s.\n" mark name
+        (pp_discard_count report.discards)
+        (pp_test_count report.tests)
   | Failed { failure; log } -> (
       let mark = if color then with_color ansi_red "✗" else "✗" in
-      Printf.printf "  %s %s failed after %d tests.\n" mark name report.tests;
+      Printf.printf "  %s %s failed after %s%s.\n" mark name
+        (pp_test_count report.tests)
+        (pp_shrink_discard report.shrinks report.discards);
       List.iter
         (fun entry ->
           match entry with
@@ -548,7 +606,15 @@ let check_parallel
 let recheck size seed prop =
   match prop.gen size seed with
   | None ->
-      { tests = 1; discards = 1; status = GaveUp; coverage = []; seed; size }
+      {
+        tests = 1;
+        discards = 1;
+        shrinks = 0;
+        status = GaveUp;
+        coverage = [];
+        seed;
+        size;
+      }
   | Some tree -> (
       let test_fn = Tree.value tree in
       match run_test test_fn with
@@ -557,22 +623,24 @@ let recheck size seed prop =
           {
             tests = 1;
             discards = 0;
+            shrinks = 0;
             status = OK;
             coverage = coverage_to_list cov;
             seed;
             size;
           }
       | TestFailed (fail, log) ->
-          let final_fail, final_log =
+          let final_fail, final_log, shrinks =
             match
               take_smallest prop.config.verbosity prop.config.shrink_limit tree
             with
-            | Some (f, l) -> (f, l)
-            | None -> (fail, log)
+            | Some (f, l, n) -> (f, l, n)
+            | None -> (fail, log, 0)
           in
           {
             tests = 1;
             discards = 0;
+            shrinks;
             status = Failed { failure = final_fail; log = final_log };
             coverage = [];
             seed;

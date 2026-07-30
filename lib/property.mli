@@ -6,6 +6,9 @@
 
 (** {2 Configuration} *)
 
+(** Verbosity of the live progress output. [Normal] reports tests, discards and
+    shrinks on stderr as the run proceeds; [Quiet] prints nothing until the run
+    finishes. *)
 type verbosity = Quiet | Normal
 
 type config = {
@@ -16,6 +19,9 @@ type config = {
 }
 
 val default_config : config
+(** Defaults: 100 tests, 100 discards, 1000 shrinks. Verbosity is taken from the
+    [HEDGEHOG_VERBOSITY] environment variable ([0] for [Quiet], [1] for
+    [Normal]) and defaults to [Normal]. *)
 
 (** {2 Results} *)
 
@@ -48,6 +54,7 @@ type label_info = { name : string; minimum : float; count : int }
 type report = {
   tests : int;
   discards : int;
+  shrinks : int;
   status : status;
   coverage : label_info list;
   seed : Seed.t;
@@ -137,7 +144,11 @@ val with_discards : int -> property -> property
 (** Set the maximum number of discards before giving up. Default [100]. *)
 
 val with_verbose : property -> property
-(** Enable live progress reporting to stderr during property checking. *)
+(** Enable live progress reporting to stderr during property checking. This is
+    the default unless [HEDGEHOG_VERBOSITY=0] is set. *)
+
+val with_quiet : property -> property
+(** Suppress live progress reporting for this property. *)
 
 (** {2 Runner} *)
 

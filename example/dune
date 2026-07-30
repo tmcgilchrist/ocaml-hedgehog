@@ -1,0 +1,3 @@
+(executable
+ (name report_demo)
+ (libraries hedgehog))
