@@ -209,16 +209,6 @@ See the [Alternatives](https://tmcgilchrist.github.io/ocaml-hedgehog/guides/alte
 
 ## Architecture
 
-```
-Seed ──┐
-       │
-Tree ──┤
-       ├──► Gen ──► Property ──► Stm
-Shrink─┤
-       │
-Range ─┘
-```
-
 | Module              | Description                                                        |
 |---------------------|--------------------------------------------------------------------|
 | `Hedgehog.Seed`     | Splittable PRNG built on OCaml 5's `Random.State`                  |
