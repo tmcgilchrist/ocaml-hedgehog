@@ -203,7 +203,11 @@ adopted in 2021:
 - **LCS diff on failure** — `===` and `diff` assertions produce line-level diffs between expected and actual values.
 - **Small dependency footprint** — the stdlib plus `domainslib`. `qcheck-core` needs only `unix`; `base_quickcheck` pulls in `base`, `ppxlib` and several `ppx_*` libraries.
 
-What Hedgehog lacks: **ppx derivation** (QCheck has `ppx_deriving_qcheck`, JS Quickcheck `[%quickcheck.generator: int list]`) and **function generation** (QCheck's `Observable`/`Fn`, JS Quickcheck's `Observer.t`). Both require writing generators explicitly here.
+What Hedgehog lacks:
+ 1. **ppx derivation** (QCheck has `ppx_deriving_qcheck`, JS Quickcheck `[%quickcheck.generator: int list]`) and
+ 2. **function generation** (QCheck's `Observable`/`Fn`, JS Quickcheck's `Observer.t`).
+
+Both require writing generators explicitly.
 
 See the [Alternatives](https://tmcgilchrist.github.io/ocaml-hedgehog/guides/alternatives/) page for a detailed comparison.
 
