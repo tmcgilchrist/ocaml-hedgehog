@@ -70,7 +70,7 @@ jobs:
       - name: Generate docs
         run: opam exec -- make docs
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
 
