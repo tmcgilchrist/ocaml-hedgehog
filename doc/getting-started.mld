@@ -80,10 +80,13 @@ counterexamples with shrinking:
 {@ocaml[
 open Hedgehog
 
+let show_list xs = "[" ^ String.concat "; " (List.map string_of_int xs) ^ "]"
+
 let prop_bad_sort =
   Property.(property Gen.(
     let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
     return (fun () ->
+      annotate ("xs = " ^ show_list xs);
       let sorted = List.sort Int.compare xs in
       assert_ (sorted = xs))))
 
@@ -91,10 +94,45 @@ let () =
   Property.check prop_bad_sort |> ignore
 ]}
 
-Hedgehog will find a minimal counterexample, typically a two-element
-list like [[1; 0]], demonstrating that not all lists are already sorted.
-The integrated shrinking automatically reduces the counterexample without
-any extra work from you.
+Integrated shrinking reduces the failure to a minimal counterexample
+without any extra work from you — a two-element list is the smallest
+list that is not already sorted:
+
+{v
+*** Failed! Falsifiable (after 4 tests and 62 shrinks):
+  xs = [1; 0]
+  Assertion failed
+v}
+
+Note the [annotate] call. [assert_] reports only that the assertion
+failed, so without an annotation the report has no counterexample in it
+at all. For structured values, {!page-"tutorial"} shows how [diff]
+prints the counterexample as a line-level diff instead:
+
+{@ocaml[
+open Hedgehog
+
+let show_lines xs = String.concat "\n" (List.map string_of_int xs)
+
+let () =
+  Property.check
+    Property.(property Gen.(
+      let* xs = list (Range.linear 0 100) (int (Range.linear 0 1000)) in
+      return (fun () ->
+        diff show_lines ( = ) show_lines (List.sort Int.compare xs) xs)))
+  |> ignore
+]}
+
+{v
+*** Failed! Falsifiable (after 4 tests and 43 shrinks):
+  - 0
+    1
+  + 0
+v}
+
+The sorted list is on the [-] side and the generated one on the [+]
+side: [0] moved from the front to the back, and the [1] they share is
+kept as context.
 
 {1 Next steps}
 
