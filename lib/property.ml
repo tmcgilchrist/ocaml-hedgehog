@@ -43,10 +43,12 @@ let with_color color s = color ^ s ^ ansi_reset
 
 (* -- Result types -- *)
 
+type diff_values = { left : string; right : string }
+
 type failure = {
   message : string;
   location : string option;
-  diff : Diff.t option;
+  diff : diff_values option;
 }
 
 type cover = NoCover | Cover
@@ -97,11 +99,14 @@ let ( === ) a b =
     Effect.perform
       (Fail { message = "not equal"; location = None; diff = None })
 
+(* The values are kept as they were rendered rather than diffed here: the
+   diff is a display concern, so the renderer chosen at report time decides
+   how (and whether) to compute one. Shrinking re-runs a failing assertion
+   many times, and none of those intermediate diffs would be shown. *)
 let diff show_a eq show_b a b =
   if not (eq a b) then
-    let sa = show_a a and sb = show_b b in
-    let d = Diff.of_strings sa sb in
-    Effect.perform (Fail { message = ""; location = None; diff = Some d })
+    let values = { left = show_a a; right = show_b b } in
+    Effect.perform (Fail { message = ""; location = None; diff = Some values })
 
 let failure () =
   Effect.perform
@@ -411,18 +416,45 @@ let check_report prop =
   clear_progress ();
   report
 
-let format_diff ~color buf d =
+(* -- Diff rendering -- *)
+
+type diff_renderer = color:bool -> left:string -> right:string -> string
+
+let default_diff_renderer ~color ~left ~right =
+  let buf = Buffer.create 256 in
   List.iter
     (fun edit ->
       match edit with
-      | Diff.Same line -> Buffer.add_string buf (Printf.sprintf "    %s\n" line)
+      | Diff.Same line -> Buffer.add_string buf (Printf.sprintf "  %s\n" line)
       | Diff.Removed line ->
-          let s = Printf.sprintf "  - %s\n" line in
+          let s = Printf.sprintf "- %s\n" line in
           Buffer.add_string buf (if color then with_color ansi_red s else s)
       | Diff.Added line ->
-          let s = Printf.sprintf "  + %s\n" line in
+          let s = Printf.sprintf "+ %s\n" line in
           Buffer.add_string buf (if color then with_color ansi_green s else s))
-    d.Diff.edits
+    (Diff.of_strings left right).Diff.edits;
+  Buffer.contents buf
+
+let current_diff_renderer : diff_renderer ref = ref default_diff_renderer
+let set_diff_renderer r = current_diff_renderer := r
+let get_diff_renderer () = !current_diff_renderer
+
+(* Renderers produce unindented lines; the report decides where the block
+   sits. Splitting on newlines leaves any ANSI escapes within a line alone. *)
+let indent_lines prefix s =
+  if s = "" then ""
+  else
+    let lines = String.split_on_char '\n' s in
+    let lines =
+      match List.rev lines with "" :: rest -> List.rev rest | _ -> lines
+    in
+    String.concat ""
+      (List.map
+         (fun line -> if line = "" then "\n" else prefix ^ line ^ "\n")
+         lines)
+
+let format_diff ~color ~render prefix buf { left; right } =
+  Buffer.add_string buf (indent_lines prefix (render ~color ~left ~right))
 
 let format_coverage ~color buf tests coverage =
   if coverage <> [] then
@@ -440,7 +472,8 @@ let format_coverage ~color buf tests coverage =
            else line))
       coverage
 
-let format_report ?(color = false) report =
+let format_report ?(color = false) ?diff_renderer report =
+  let render = Option.value diff_renderer ~default:!current_diff_renderer in
   let buf = Buffer.create 256 in
   (match report.status with
   | OK ->
@@ -475,7 +508,7 @@ let format_report ?(color = false) report =
           | Label _ -> ())
         log;
       (match failure.diff with
-      | Some d -> format_diff ~color buf d
+      | Some values -> format_diff ~color ~render "  " buf values
       | None ->
           if failure.message <> "" then
             Buffer.add_string buf (Printf.sprintf "  %s\n" failure.message));
@@ -520,9 +553,9 @@ let print_property_result ~color name report =
           | Label _ -> ())
         log;
       match failure.diff with
-      | Some d ->
+      | Some values ->
           let buf = Buffer.create 128 in
-          format_diff ~color buf d;
+          format_diff ~color ~render:!current_diff_renderer "      " buf values;
           print_string (Buffer.contents buf)
       | None ->
           let msg = Printf.sprintf "      %s\n" failure.message in

@@ -55,6 +55,68 @@ on failure.
 
 {b [failure : unit -> 'a]} — Explicitly fails the property.
 
+{1 Diff rendering}
+
+A failing [diff] records the two values as they were rendered; turning
+them into report lines happens later, when the report is formatted. The
+built-in renderer is a line-level LCS diff — [-] for lines from the
+first value, [+] for lines from the second, and lines that agree kept as
+context — but that step is replaceable:
+
+{@ocaml[
+open Hedgehog
+
+(* A renderer is [color:bool -> left:string -> right:string -> string].
+   Lines come back unindented; the report indents the block for you. *)
+let only_changed ~color:_ ~left ~right =
+  (Diff.of_strings left right).edits
+  |> List.filter_map (function
+       | Diff.Same _ -> None
+       | Diff.Removed line -> Some ("- " ^ line ^ "\n")
+       | Diff.Added line -> Some ("+ " ^ line ^ "\n"))
+  |> String.concat ""
+
+(* Applies to [check], [check_group], [format_report] and the
+   hedgehog-alcotest integration. *)
+let () = Property.set_diff_renderer only_changed
+
+(* Or override it for a single report. *)
+let _render_one report =
+  Property.format_report ~diff_renderer:Property.default_diff_renderer report
+]}
+
+The same hook takes an external differ. [patdiff], for instance, refines
+within a changed line rather than replacing the line wholesale, which
+reads better for long strings:
+
+{@ocaml skip[
+(* Sketch — needs the patdiff package, which is not a dependency of
+   Hedgehog. Check the API against the version you install. *)
+let patdiff_renderer ~color ~left ~right =
+  let config =
+    Patdiff.Configuration.override
+      ~output:(if color then Patdiff_kernel.Output.Ansi else Ascii)
+      Patdiff.Configuration.default
+  in
+  match
+    Patdiff.Compare_core.diff_strings ~print_global_header:false config
+      ~prev:{ Patdiff.Diff_input.name = "expected"; text = left }
+      ~next:{ Patdiff.Diff_input.name = "actual"; text = right }
+  with
+  | `Same -> ""
+  | `Different rendered -> rendered
+
+let () = Property.set_diff_renderer patdiff_renderer
+]}
+
+Keeping that out of the library proper is deliberate: [patdiff] pulls in
+[core], [core_unix] and [ppx_jane], where Hedgehog itself depends on the
+stdlib plus [domainslib].
+
+Because the renderer receives the values rather than a pre-computed set
+of edits, it is free to choose its own algorithm — word level, patience,
+side by side — instead of re-rendering ours.
+
 {1 Logging}
 
 Use [annotate] and [footnote] to add context to failure reports:

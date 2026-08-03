@@ -1680,6 +1680,80 @@ let test_color_rendering () =
           && (not (String.contains s_fail '\027'))
           && not (String.contains s_gave '\027')))
 
+(* ---- Pluggable diff rendering tests ---- *)
+
+let contains haystack needle =
+  let n = String.length needle and h = String.length haystack in
+  let rec go i =
+    i + n <= h && (String.sub haystack i n = needle || go (i + 1))
+  in
+  n = 0 || go 0
+
+let diff_failure_report () =
+  let open Hedgehog in
+  Property.check_report
+    (Property.property
+       Gen.(return (fun () -> Property.diff Fun.id ( = ) Fun.id "old" "new")))
+
+let test_diff_renderer () =
+  group "Diff rendering" (fun () ->
+      check "failure records the rendered values" (fun () ->
+          let open Hedgehog in
+          match (diff_failure_report ()).status with
+          | Property.Failed { failure = { diff = Some v; _ }; _ } ->
+              v.Property.left = "old" && v.Property.right = "new"
+          | _ -> false);
+
+      check "?diff_renderer overrides the default for one report" (fun () ->
+          let open Hedgehog in
+          let render ~color:_ ~left ~right =
+            Printf.sprintf "%s -> %s\n" left right
+          in
+          let s =
+            Property.format_report ~diff_renderer:render
+              (diff_failure_report ())
+          in
+          contains s "  old -> new\n" && not (contains s "- old"));
+
+      check "the report indents whatever the renderer returns" (fun () ->
+          let open Hedgehog in
+          let render ~color:_ ~left:_ ~right:_ = "one\ntwo\n" in
+          let s =
+            Property.format_report ~diff_renderer:render
+              (diff_failure_report ())
+          in
+          contains s "  one\n  two\n");
+
+      check "set_diff_renderer applies to check_report output" (fun () ->
+          let open Hedgehog in
+          let render ~color:_ ~left ~right = "custom " ^ left ^ right ^ "\n" in
+          Property.set_diff_renderer render;
+          let s = Property.format_report (diff_failure_report ()) in
+          Property.set_diff_renderer Property.default_diff_renderer;
+          let restored = Property.format_report (diff_failure_report ()) in
+          contains s "  custom oldnew\n"
+          && contains restored "- old" && contains restored "+ new");
+
+      check "get_diff_renderer returns the installed renderer" (fun () ->
+          let open Hedgehog in
+          let render ~color:_ ~left:_ ~right:_ = "marker\n" in
+          Property.set_diff_renderer render;
+          let got = Property.get_diff_renderer () in
+          Property.set_diff_renderer Property.default_diff_renderer;
+          got ~color:false ~left:"a" ~right:"b" = "marker\n");
+
+      check "default renderer still colors and marks lines" (fun () ->
+          let open Hedgehog in
+          let plain =
+            Property.default_diff_renderer ~color:false ~left:"a\nb"
+              ~right:"a\nc"
+          in
+          let colored =
+            Property.default_diff_renderer ~color:true ~left:"a\nb"
+              ~right:"a\nc"
+          in
+          plain = "  a\n- b\n+ c\n" && String.contains colored '\027'))
+
 let () =
   test_seed ();
   test_tree ();
@@ -1693,6 +1767,7 @@ let () =
   test_stm ();
   test_diff ();
   test_color_rendering ();
+  test_diff_renderer ();
   Printf.printf "\n=== Summary ===\n";
   Printf.printf "  Passed: %d\n" !tests_passed;
   Printf.printf "  Failed: %d\n" !tests_failed;

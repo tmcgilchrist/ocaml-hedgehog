@@ -25,10 +25,16 @@ val default_config : config
 
 (** {2 Results} *)
 
+type diff_values = { left : string; right : string }
+(** The two values compared by {!val-diff}, as they were rendered. They are kept
+    verbatim rather than diffed at assertion time so that the renderer chosen at
+    report time decides how to compare them — see {!section-"diff-rendering"}.
+*)
+
 type failure = {
   message : string;
   location : string option;
-  diff : Diff.t option;
+  diff : diff_values option;
 }
 
 type cover = NoCover | Cover
@@ -150,6 +156,34 @@ val with_verbose : property -> property
 val with_quiet : property -> property
 (** Suppress live progress reporting for this property. *)
 
+(** {2:diff-rendering Diff rendering}
+
+    A failing {!val-diff} assertion records the two values as strings; turning
+    them into report lines is a separate, replaceable step. The built-in
+    renderer runs the line-level LCS diff in {!Hedgehog.Diff}, but any function
+    of the same shape can be installed instead — a word-level differ, a
+    side-by-side view, or an external library such as [patdiff]. *)
+
+type diff_renderer = color:bool -> left:string -> right:string -> string
+(** [render ~color ~left ~right] renders a comparison as report lines.
+
+    [left] is the first value passed to {!val-diff} and [right] the second.
+    Lines are returned unindented and newline terminated; the report indents the
+    whole block to the position it occupies. When [color] is [true] the renderer
+    may emit ANSI escapes. *)
+
+val default_diff_renderer : diff_renderer
+(** The built-in renderer: a line-level LCS diff, with removed lines prefixed
+    [- ], added lines [+ ], and common lines kept as context. *)
+
+val set_diff_renderer : diff_renderer -> unit
+(** Install the renderer used by {!check}, {!format_report}, {!check_group} and
+    the [hedgehog-alcotest] integration. Global; call it once at start of day.
+    Pass {!default_diff_renderer} to restore the default. *)
+
+val get_diff_renderer : unit -> diff_renderer
+(** The currently installed renderer. *)
+
 (** {2 Runner} *)
 
 val check : property -> bool
@@ -158,9 +192,12 @@ val check : property -> bool
 val check_report : property -> report
 (** Run a property and return the full report. *)
 
-val format_report : ?color:bool -> report -> string
+val format_report :
+  ?color:bool -> ?diff_renderer:diff_renderer -> report -> string
 (** Format a report as a human-readable string. When [~color:true], ANSI escape
-    codes are included for colored output. Defaults to [false]. *)
+    codes are included for colored output. Defaults to [false]. [~diff_renderer]
+    overrides the installed renderer for this report only; see
+    {!section-"diff-rendering"}. *)
 
 (** {2 Group runner} *)
 

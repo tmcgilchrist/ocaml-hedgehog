@@ -201,6 +201,7 @@ adopted in 2021:
 - **State machine testing in the library** — `Stm` supports sequential and parallel (linearizability) checking with `Domain.spawn`. QCheck offers this through the separate `qcheck-stm` and `qcheck-lin` packages, which pioneered the approach for OCaml 5.
 - **Parallel property runner** — `Property.check_parallel` runs a group's properties concurrently across domains via `domainslib`. QCheck's runners are sequential.
 - **LCS diff on failure** — `===` and `diff` assertions produce line-level diffs between expected and actual values.
+- **Pluggable diff rendering** — a failing `diff` records the two values as strings, and `Property.set_diff_renderer` replaces the built-in LCS rendering with any `color:bool -> left:string -> right:string -> string` function. An external differ such as [patdiff](https://github.com/janestreet/patdiff) can be dropped in without Hedgehog depending on it.
 - **Small dependency footprint** — the stdlib plus `domainslib`. `qcheck-core` needs only `unix`; `base_quickcheck` pulls in `base`, `ppxlib` and several `ppx_*` libraries.
 
 What Hedgehog lacks:
