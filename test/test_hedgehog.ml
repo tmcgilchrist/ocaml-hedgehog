@@ -771,17 +771,22 @@ let test_property () =
           let report = Property.check_report prop in
           match report.status with
           | Property.Failed { log; _ } ->
-              (* With 0 shrinks, the counterexample should NOT be shrunk to 500 *)
-              List.exists
-                (fun entry ->
-                  match entry with
-                  | Property.Annotation s -> (
-                      try
-                        let n = Scanf.sscanf s "n = %d" Fun.id in
-                        n > 500
-                      with _ -> false)
-                  | _ -> false)
-                log
+              (* With 0 shrinks the counterexample is whatever failed first,
+                 which is at least 500 — the shrunk minimum is exactly 500, so
+                 a first failure of 500 is possible and must not fail this
+                 test. [report.shrinks = 0] is what proves shrinking was
+                 disabled. *)
+              report.shrinks = 0
+              && List.exists
+                   (fun entry ->
+                     match entry with
+                     | Property.Annotation s -> (
+                         try
+                           let n = Scanf.sscanf s "n = %d" Fun.id in
+                           n >= 500
+                         with _ -> false)
+                     | _ -> false)
+                   log
           | _ -> false);
 
       check "with_discards affects give-up" (fun () ->
