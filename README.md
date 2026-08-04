@@ -75,6 +75,75 @@ let prop_bad =
   Assertion failed
 ```
 
+`assert_` can only report *that* the property failed, which is why the
+example above annotates `n`. For structured values, `Property.diff` takes
+a printer for each side and reports the counterexample as a line-level
+diff — `-` is the first value, `+` the second, and lines that agree are
+kept as context. Here a CSV encoder forgets to quote its fields, so a
+comma inside a name shifts every field after it:
+
+```ocaml
+type contact = { id : int; name : string; email : string }
+
+let encode c = Printf.sprintf "%d,%s,%s" c.id c.name c.email
+
+let decode s =
+  match String.split_on_char ',' s with
+  | id :: name :: email :: _ ->
+      Option.map (fun id -> { id; name; email }) (int_of_string_opt id)
+  | _ -> None
+
+(* One field per line, so the diff can point at the field that changed. *)
+let show_contact c =
+  String.concat "\n"
+    [ "contact {"
+    ; Printf.sprintf "  id    = %d" c.id
+    ; Printf.sprintf "  name  = %S" c.name
+    ; Printf.sprintf "  email = %S" c.email
+    ; "}" ]
+
+let prop_round_trip =
+  Property.property Gen.(
+    (* A name may contain a comma ("Doe, Jane"); an address may not. *)
+    let* id = int (Range.linear 0 999) in
+    let* name = string (Range.linear 1 6) (element ['a'; 'b'; ',']) in
+    let+ local = string (Range.linear 1 4) (element ['a'; 'b']) in
+    let c = { id; name; email = local ^ "@example.com" } in
+    fun () ->
+      Property.annotate (Printf.sprintf "encoded: %S" (encode c));
+      match decode (encode c) with
+      | None -> Property.failure ()
+      | Some c' -> Property.diff show_contact ( = ) show_contact c c')
+```
+
+Shrinking reduces the contact to the shortest one that still needs
+escaping, so the report is about the comma and nothing else:
+
+```
+*** Failed! Falsifiable (after 2 tests and 6 shrinks):
+  encoded: "0,,,@example.com"
+    contact {
+      id    = 0
+  -   name  = ","
+  -   email = "@example.com"
+  +   name  = ""
+  +   email = ""
+    }
+```
+
+The `id` line round tripped and stays as context; the name lost its
+comma and the address disappeared entirely.
+
+Two runnable programs in [`example/`](example) show the reporting in
+full — `report_demo.ml` covers every shape of report (passed, gave up,
+failed, with discards and shrinks) and `diff_demo.ml` covers diffed
+counterexamples:
+
+```shell
+dune exec example/diff_demo.exe
+dune exec example/report_demo.exe
+```
+
 ## State Machine Testing
 
 The `Stm` module lets you test stateful systems by defining a model
@@ -200,7 +269,7 @@ adopted in 2021:
 - **Coverage enforcement** — `cover 50.0 "positive" (n > 0)` fails the property if fewer than 50% of test cases satisfy the condition. QCheck reports distributions via `?collect` and `?stats` but cannot enforce a threshold; JS Quickcheck has no equivalent.
 - **State machine testing in the library** — `Stm` supports sequential and parallel (linearizability) checking with `Domain.spawn`. QCheck offers this through the separate `qcheck-stm` and `qcheck-lin` packages, which pioneered the approach for OCaml 5.
 - **Parallel property runner** — `Property.check_parallel` runs a group's properties concurrently across domains via `domainslib`. QCheck's runners are sequential.
-- **LCS diff on failure** — `===` and `diff` assertions produce line-level diffs between expected and actual values.
+- **LCS diff on failure** — the `diff` assertion produces a line-level diff between expected and actual values, keeping matching lines as context. `assert_` and `===` report only that the property failed.
 - **Small dependency footprint** — the stdlib plus `domainslib`. `qcheck-core` needs only `unix`; `base_quickcheck` pulls in `base`, `ppxlib` and several `ppx_*` libraries.
 
 What Hedgehog lacks:

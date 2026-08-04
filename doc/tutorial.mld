@@ -51,9 +51,128 @@ let () =
 
 {b [diff : ('a -> string) -> ('a -> 'b -> bool) -> ('b -> string) -> 'a -> 'b -> unit]}
 — Asserts equality with a custom comparator and shows a line-level diff
-on failure.
+on failure. See {!section-"diffs"} below.
 
 {b [failure : unit -> 'a]} — Explicitly fails the property.
+
+{1:diffs Diffs}
+
+[assert_] and [===] can only report {i that} a property failed. They have
+no way to print the values involved, so the counterexample never reaches
+the report:
+
+{v
+*** Failed! Falsifiable (after 4 tests and 62 shrinks):
+  not equal
+v}
+
+[diff] takes a printer for each side and renders a line-level diff of the
+two values it was given. Lines prefixed with [-] come from the first
+value, lines prefixed with [+] from the second, and lines that agree are
+kept as context — so the report points at what changed instead of
+dumping both values whole.
+
+Here is a CSV encoder that forgets to quote its fields, paired with the
+matching decoder:
+
+{@ocaml[
+open Hedgehog
+
+type contact = { id : int; name : string; email : string }
+
+(* Under test: comma separated, with no quoting or escaping. A field that
+   itself contains a comma silently shifts everything after it. *)
+let encode c = Printf.sprintf "%d,%s,%s" c.id c.name c.email
+
+let decode s =
+  match String.split_on_char ',' s with
+  | id :: name :: email :: _ ->
+      Option.map (fun id -> { id; name; email }) (int_of_string_opt id)
+  | _ -> None
+
+(* One field per line, so the diff can point at the field that changed. *)
+let show_contact c =
+  String.concat "\n"
+    [ "contact {"
+    ; Printf.sprintf "  id    = %d" c.id
+    ; Printf.sprintf "  name  = %S" c.name
+    ; Printf.sprintf "  email = %S" c.email
+    ; "}"
+    ]
+
+(* A name may contain a comma ("Doe, Jane"); an address may not. *)
+let gen_contact =
+  Gen.(
+    let* id = int (Range.linear 0 999) in
+    let* name = string (Range.linear 1 6) (element ['a'; 'b'; ',']) in
+    let+ local = string (Range.linear 1 4) (element ['a'; 'b']) in
+    { id; name; email = local ^ "@example.com" })
+
+let prop_round_trip =
+  Property.(property Gen.(
+    let+ c = gen_contact in
+    fun () ->
+      annotate (Printf.sprintf "encoded: %S" (encode c));
+      match decode (encode c) with
+      | None -> failure ()
+      | Some c' -> diff show_contact ( = ) show_contact c c'))
+
+let () = Property.check prop_round_trip |> ignore
+]}
+
+Shrinking reduces the contact to the shortest one that still needs
+escaping, so the report is about the comma and nothing else:
+
+{v
+*** Failed! Falsifiable (after 2 tests and 6 shrinks):
+  encoded: "0,,,@example.com"
+    contact {
+      id    = 0
+  -   name  = ","
+  -   email = "@example.com"
+  +   name  = ""
+  +   email = ""
+    }
+v}
+
+The [id] line is context: it round tripped. The comma in [name] shifted
+every field after it, so the decoded name came back empty and the
+address was lost entirely — two facts the diff shows at a glance and
+["not equal"] does not.
+
+{2 Printing values for a diff}
+
+The diff is computed over lines, using a longest common subsequence, so
+how you print a value decides how useful its diff is:
+
+- {b One field, element, or row per line.} A value printed on a single
+  line can only ever produce one [-] line and one [+] line, which is no
+  better than printing both values.
+- {b Put the expected value first.} [-] is the first argument to [diff]
+  and [+] the second, matching the convention of a patch: [-] is what
+  you wanted, [+] is what you got.
+- {b Keep the rendering stable.} Sort association lists and hash table
+  contents before printing, or unchanged rows will show up as edits.
+
+Annotations are printed above the diff, so [annotate] is the natural
+place for the scalar context that explains it — the input, the seed of
+the failure, the encoded form.
+
+{2 Comparing against a reference implementation}
+
+The other common use of [diff] is differential testing: run the same
+input through an optimised implementation and an obviously-correct one,
+and diff the two results. Because the diff keeps matching lines as
+context, a report of a hundred rows highlights only the handful that
+disagree.
+
+The [example/diff_demo.ml] program in the repository shows all of this
+end to end — [===] against [diff] on the same failure, the round trip
+above, and a summary report checked against a reference implementation:
+
+{@bash skip[
+dune exec example/diff_demo.exe
+]}
 
 {1 Logging}
 
